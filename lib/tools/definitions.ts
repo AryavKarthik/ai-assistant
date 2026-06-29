@@ -1,0 +1,413 @@
+import type { Tool } from "@anthropic-ai/sdk/resources/messages";
+
+// Tool schemas Claude sees — add new tools here.
+export const TOOL_DEFINITIONS: Tool[] = [
+  {
+    name: "save_memory",
+    description:
+      "Store or update a durable fact, preference, goal, or lifestyle pattern. REQUIRED proactively whenever the user shares personal context — even casually — without asking permission. Examples: where they live/work, gym habits, sleep schedule, weekly routines, diet, allergies, family, likes/dislikes, goals, 'I usually…', 'every week I…'. Use multiple calls per turn for multiple facts. Pass replaces_memory_id when updating a memory from context. School, university, and college are the same education topic.",
+    input_schema: {
+      type: "object",
+      properties: {
+        content: {
+          type: "string",
+          description: "The memory in clear natural language",
+        },
+        category: {
+          type: "string",
+          enum: ["preference", "fact", "goal", "other"],
+        },
+        replaces_memory_id: {
+          type: "string",
+          description:
+            "Optional memory UUID to replace when updating a known fact",
+        },
+      },
+      required: ["content"],
+    },
+  },
+  {
+    name: "search_memory",
+    description:
+      "Search stored memories when pre-fetched context is insufficient. Use for specific recall questions.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        limit: { type: "integer" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "log_workout",
+    description:
+      "Log a workout or exercise session. Ask for missing key details if ambiguous.",
+    input_schema: {
+      type: "object",
+      properties: {
+        exercise: { type: "string" },
+        sets: { type: "integer" },
+        reps: { type: "integer" },
+        weight_kg: { type: "number" },
+        duration_min: { type: "integer" },
+        notes: { type: "string" },
+      },
+      required: ["exercise"],
+    },
+  },
+  {
+    name: "list_workouts",
+    description:
+      "List recent workout sessions. Use when the user asks about gym history beyond pre-fetched context.",
+    input_schema: {
+      type: "object",
+      properties: {
+        limit: { type: "integer" },
+        since: {
+          type: "string",
+          description: "ISO 8601 datetime — only workouts on or after this date",
+        },
+      },
+    },
+  },
+  {
+    name: "search_workouts",
+    description:
+      "Search workouts by exercise name or date range. Use for specific exercise history.",
+    input_schema: {
+      type: "object",
+      properties: {
+        exercise: { type: "string" },
+        since: {
+          type: "string",
+          description: "ISO 8601 datetime — only workouts on or after this date",
+        },
+        limit: { type: "integer" },
+      },
+    },
+  },
+  {
+    name: "create_reminder",
+    description:
+      "REQUIRED when the user asks for a reminder. Creates a stored task visible on the Reminders tab. Must be called before you confirm the reminder exists. Set due_at (ISO 8601) when the user gives a time.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string" },
+        due_at: {
+          type: "string",
+          description: "ISO 8601 datetime, optional",
+        },
+      },
+      required: ["title"],
+    },
+  },
+  {
+    name: "list_reminders",
+    description:
+      "List the user's reminders. Use when they ask what reminders they have or what's coming up.",
+    input_schema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          enum: ["pending", "done", "cancelled", "all"],
+          description: "Filter by status. Defaults to pending.",
+        },
+        limit: { type: "integer" },
+      },
+    },
+  },
+  {
+    name: "complete_reminder",
+    description:
+      "Mark a reminder as done. Provide id when possible; otherwise match by title.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Reminder UUID from list_reminders",
+        },
+        title: {
+          type: "string",
+          description:
+            "Match by title if id is unknown. Must match exactly one pending reminder.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "complete_all_reminders",
+    description:
+      "Mark every pending reminder as done. Use when the user wants to clear or complete all reminders.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "delete_all_reminders",
+    description:
+      "Permanently delete every pending reminder. Use when the user asks to delete or clear all reminders.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "delete_reminder",
+    description: "Permanently delete one reminder by id from list_reminders.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: {
+          type: "string",
+          description: "Reminder UUID from list_reminders",
+        },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "list_calendar_events",
+    description:
+      "List Google Calendar events for a date range. Use for schedule questions beyond pre-fetched context. Requires linked Google Calendar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        time_min: {
+          type: "string",
+          description: "ISO 8601 datetime — range start (defaults to now)",
+        },
+        time_max: {
+          type: "string",
+          description: "ISO 8601 datetime — range end (defaults to 7 days ahead)",
+        },
+        max_results: { type: "integer" },
+      },
+    },
+  },
+  {
+    name: "create_calendar_event",
+    description:
+      "Create an event on the user's Google Calendar (primary). Use for meetings, appointments, and time blocks. Requires linked Google Calendar.",
+    input_schema: {
+      type: "object",
+      properties: {
+        summary: { type: "string", description: "Event title" },
+        start: {
+          type: "string",
+          description: "ISO 8601 datetime or date (YYYY-MM-DD for all-day)",
+        },
+        end: {
+          type: "string",
+          description: "ISO 8601 datetime or date (YYYY-MM-DD for all-day)",
+        },
+        description: { type: "string" },
+        location: { type: "string" },
+        attendees: {
+          type: "array",
+          items: { type: "string" },
+          description: "Attendee email addresses",
+        },
+      },
+      required: ["summary", "start", "end"],
+    },
+  },
+  {
+    name: "update_calendar_event",
+    description:
+      "Update an existing Google Calendar event by event_id. Confirm with the user before changing or cancelling ambiguous events.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string" },
+        summary: { type: "string" },
+        start: { type: "string" },
+        end: { type: "string" },
+        description: { type: "string" },
+        location: { type: "string" },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
+    name: "delete_calendar_event",
+    description:
+      "Delete a Google Calendar event by event_id. Confirm with the user before deleting.",
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string" },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
+    name: "search_gmail",
+    description:
+      "Search Gmail using Gmail query syntax. Read-only. Requires linked Gmail at /connections.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Gmail search query" },
+        max_results: { type: "integer" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_gmail_message",
+    description:
+      "Get a Gmail message by ID with plain-text body. Read-only. Use after search_gmail.",
+    input_schema: {
+      type: "object",
+      properties: {
+        message_id: { type: "string" },
+      },
+      required: ["message_id"],
+    },
+  },
+  {
+    name: "create_gmail_draft",
+    description:
+      "Create a Gmail draft for the user to review. Does NOT send email. The user must tap Send on the draft receipt in chat after reviewing. Requires linked Gmail with compose permission at /connections.",
+    input_schema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Optional when replying in-thread" },
+        body: { type: "string", description: "Plain-text email body" },
+        cc: { type: "string" },
+        bcc: { type: "string" },
+        reply_to_message_id: {
+          type: "string",
+          description: "Optional Gmail message id to reply in-thread",
+        },
+      },
+      required: ["to", "body"],
+    },
+  },
+  {
+    name: "get_youtube_taste_profile",
+    description:
+      "Get cached YouTube taste profile (subscriptions/likes summary). Requires linked YouTube.",
+    input_schema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "search_youtube",
+    description:
+      "Search YouTube videos by topic. Requires linked YouTube.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        max_results: { type: "integer" },
+        duration: {
+          type: "string",
+          enum: ["short", "medium", "long"],
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "recommend_youtube",
+    description:
+      "Recommend YouTube videos for a topic using taste profile + search. Explain picks in your reply.",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: { type: "string" },
+      },
+      required: ["topic"],
+    },
+  },
+  {
+    name: "web_search",
+    description:
+      "Search the web for current information, facts, news, or any topic the user asks about. Use when the answer requires real-time or external information not in memory. Returns titles, URLs, and descriptions. If the user asks to open a specific result, call fetch_webpage or open_browser_tab next.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "Search query — be specific and include relevant context",
+        },
+        count: {
+          type: "integer",
+          description: "Number of results to return (1–10, default 5)",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "fetch_webpage",
+    description:
+      "Fetch and read the text content of a specific URL. Use after web_search to read a result in detail, or when the user provides a link they want summarized. Returns cleaned page text (up to 3000 chars). An 'Open' button will appear in chat for the user to view the page.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: {
+          type: "string",
+          description: "Full URL to fetch (must start with http:// or https://)",
+        },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "plan_workflow",
+    description:
+      "Create a structured multi-step workflow plan when the user asks for 2 or more coordinated WRITE actions across different tools (e.g., reschedule meeting + email someone + create reminder). Call this AFTER any necessary read/discovery steps (e.g., finding the event ID first). Do NOT use for single-tool actions — call the tool directly. Do NOT use for read-only workflows. The plan will be shown to the user for review before any step executes.",
+    input_schema: {
+      type: "object",
+      properties: {
+        title: {
+          type: "string",
+          description: "Short title for the workflow (max 60 chars), e.g. 'Reschedule and notify'",
+        },
+        description: {
+          type: "string",
+          description: "One sentence summary of what this workflow does",
+        },
+        steps: {
+          type: "array",
+          description: "Ordered steps. Include full resolved args — all event IDs, email addresses, etc. must be known before calling plan_workflow.",
+          items: {
+            type: "object",
+            properties: {
+              tool: {
+                type: "string",
+                description: "Exact tool name from TOOL_DEFINITIONS (e.g. update_calendar_event, create_gmail_draft, create_reminder)",
+              },
+              args: {
+                type: "object",
+                description: "Complete arguments for the tool — same format as calling the tool directly",
+              },
+              description: {
+                type: "string",
+                description: "Human-readable description shown to the user (e.g. 'Move 3pm meeting to 4pm')",
+              },
+              risk_level: {
+                type: "string",
+                enum: ["read", "write", "irreversible"],
+                description: "read: safe, no side effects. write: creates/modifies data (reversible). irreversible: cannot be undone (sending email).",
+              },
+            },
+            required: ["tool", "args", "description", "risk_level"],
+          },
+          minItems: 2,
+        },
+      },
+      required: ["title", "description", "steps"],
+    },
+  },
+];

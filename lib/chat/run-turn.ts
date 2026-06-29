@@ -369,6 +369,7 @@ export async function runTurn(input: RunTurnInput): Promise<RunTurnResult> {
       toolUseBlocks.map(async (block) => {
         const result = await executeTool(block.name, block.input, {
           userId: ctx.userId,
+          conversationId: ctx.conversationId,
           sourceMessageId: ctx.userMessageId,
           userMessage: ctx.latestUserMessage,
         });
@@ -519,6 +520,7 @@ export async function runTurnStream(
       toolUseBlocks.map(async (block) => {
         const result = await executeTool(block.name, block.input, {
           userId: ctx.userId,
+          conversationId: ctx.conversationId,
           sourceMessageId: ctx.userMessageId,
           userMessage: ctx.latestUserMessage,
         });

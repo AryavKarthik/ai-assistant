@@ -24,13 +24,32 @@ export interface ChatActionUndo {
   targetId: string;
 }
 
-export interface ChatActionConfirm {
-  type: "send_gmail_draft";
-  draftId: string;
-  to: string;
-  subject: string;
-  preview?: string;
+export interface WorkflowStepPreview {
+  index: number;
+  description: string;
+  toolName: string;
+  riskLevel: "read" | "write" | "irreversible";
 }
+
+export type ChatActionConfirm =
+  | {
+      type: "send_gmail_draft";
+      draftId: string;
+      to: string;
+      subject: string;
+      preview?: string;
+    }
+  | {
+      type: "approve_workflow";
+      workflowId: string;
+      title: string;
+      steps: WorkflowStepPreview[];
+    }
+  | {
+      type: "open_browser_tab";
+      url: string;
+      title?: string;
+    };
 
 export interface ChatActionReceipt {
   id: string;
