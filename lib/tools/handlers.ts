@@ -33,7 +33,7 @@ import { searchMemories } from "@/lib/memory/search";
 import { resolveReminderDueAt } from "@/lib/reminders/parse-due-at";
 import { dispatchDueReminderNotifications } from "@/lib/push/dispatch";
 import type { MemoryCategory } from "@/lib/supabase/types";
-import { braveWebSearch } from "@/lib/tools/web-search";
+import { googleWebSearch } from "@/lib/tools/web-search";
 import { fetchWebpage } from "@/lib/tools/webpage";
 import { createWorkflowRun } from "@/lib/db/workflows";
 
@@ -587,7 +587,7 @@ async function handleWebSearch(
   if (!inp.query?.trim()) {
     return { error: "query is required" };
   }
-  const { results, error } = await braveWebSearch(inp.query.trim(), inp.count ?? 5);
+  const { results, error } = await googleWebSearch(inp.query.trim(), inp.count ?? 5);
   if (error) return { error };
   return { results, count: results.length };
 }

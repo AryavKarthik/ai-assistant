@@ -50,7 +50,8 @@ A chat-first personal AI assistant that feels like one brain.
    - `ANTHROPIC_MODEL_LIGHT` (optional)
    - `ANTHROPIC_MODEL_MEDIUM` (optional)
    - `ANTHROPIC_MODEL_HEAVY` (optional)
-   - `BRAVE_SEARCH_API_KEY` — Brave Search API key for web search tool (get one at search.brave.com/app/keys; optional — tool degrades gracefully when missing)
+   - `GOOGLE_SEARCH_API_KEY` — Google Custom Search API key for web search tool (optional — tool degrades gracefully when missing)
+   - `GOOGLE_SEARCH_ENGINE_ID` — Google Custom Search Engine ID (`cx` value; create at cse.google.com)
    - `NEXT_PUBLIC_SUPABASE_URL`
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
    - `SUPABASE_SERVICE_ROLE_KEY` (cron/scripts; required for `ensureAppUser` on first login)
