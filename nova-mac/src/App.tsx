@@ -1,3 +1,8 @@
+import { useEffect, useState } from "react";
+import { nova } from "./lib/ipc";
+
 export function App() {
-  return <div style={{ color: "white", padding: 16 }}>Nova booting…</div>;
+  const [reply, setReply] = useState("…");
+  useEffect(() => { nova().ping().then(setReply); }, []);
+  return <div style={{ color: "white", padding: 16 }}>Nova: {reply}</div>;
 }
