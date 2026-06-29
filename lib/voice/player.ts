@@ -10,6 +10,7 @@ export interface VoicePlayerOptions {
   provider?: "openai" | "google" | "deepgram";
   openAiTtsModel?: import("@/lib/voice/types").OpenAiTtsModel;
   googleTtsQuality?: import("@/lib/voice/types").GoogleVoiceQuality;
+  deepgramTtsVoice?: string;
 }
 
 export interface StreamingVoiceSession {
@@ -163,6 +164,7 @@ export class VoicePlayer {
       provider: options.provider,
       openAiTtsModel: options.openAiTtsModel,
       googleTtsQuality: options.googleTtsQuality,
+      deepgramTtsVoice: options.deepgramTtsVoice,
       signal: controller.signal,
     };
 
@@ -301,6 +303,7 @@ export class VoicePlayer {
           provider: options.provider,
           openAiTtsModel: options.openAiTtsModel,
           googleTtsQuality: options.googleTtsQuality,
+          deepgramTtsVoice: options.deepgramTtsVoice,
           signal: controller.signal,
         }),
       );
