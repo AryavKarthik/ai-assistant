@@ -81,7 +81,7 @@ export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   openAiTtsModel: "gpt-4o-mini-tts",
   ttsVoice: "coral",
   googleTtsVoice: "en-AU-Chirp3-HD-Kore",
-  deepgramTtsVoice: "aura-2-asteria-en",
+  deepgramTtsVoice: "aura-asteria-en",
   ttsSpeed: 1.1,
   ttsHd: true,
 };
