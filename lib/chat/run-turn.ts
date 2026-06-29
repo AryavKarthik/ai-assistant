@@ -43,7 +43,7 @@ import { preRetrieveContext } from "@/lib/memory/search";
 import { resolveAssistantText, voiceSpokenFallback } from "@/lib/chat/voice-fallback";
 import { TOOL_DEFINITIONS, executeTool } from "@/lib/tools";
 
-const MAX_TOOL_ITERATIONS = 3;
+const MAX_TOOL_ITERATIONS = 10;
 const MAX_TOOL_ITERATIONS_VOICE = 3;
 const MAX_HISTORY_LOAD = 80;
 const VOICE_CONTEXT_TIMEOUT_MS = 1200;
