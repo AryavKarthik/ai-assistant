@@ -1,0 +1,5 @@
+{
+  "appId": "com.nova.mac",
+  "productName": "Nova",
+  "protocols": [{ "name": "Nova", "schemes": ["nova"] }]
+}

@@ -10,7 +10,12 @@ import { IpcChannel } from "@shared/types";
 
 describe("registerIpcHandlers", () => {
   it("registers a handler for every provided channel", () => {
-    registerIpcHandlers({ ping: async () => "pong" });
+    registerIpcHandlers({
+      ping: async () => "pong",
+      authStatus: async () => ({ signedIn: false, email: null }),
+      authSignIn: async () => {},
+      authSignOut: async () => {},
+    });
     expect(ipcMain.handle).toHaveBeenCalledWith(IpcChannel.Ping, expect.any(Function));
   });
 });

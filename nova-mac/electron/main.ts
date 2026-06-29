@@ -2,6 +2,7 @@ import { app, BrowserWindow, globalShortcut } from "electron";
 import { createOrbWindow } from "./window";
 import { createTray } from "./tray";
 import { registerIpcHandlers } from "./ipc";
+import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
 
 let win: BrowserWindow | null = null;
 // Hold a reference so the tray is not garbage-collected.
@@ -9,8 +10,21 @@ let _trayRef: ReturnType<typeof createTray> | null = null;
 
 app.dock?.hide(); // no Dock icon — tray-only
 
-app.whenReady().then(() => {
-  registerIpcHandlers({ ping: async () => "pong" });
+app.setAsDefaultProtocolClient("nova");
+// macOS delivers deep links via open-url
+app.on("open-url", (event, url) => {
+  event.preventDefault();
+  if (url.startsWith("nova://auth-callback")) void handleAuthCallback(url);
+});
+
+app.whenReady().then(async () => {
+  registerIpcHandlers({
+    ping: async () => "pong",
+    authStatus: getAuthState,
+    authSignIn: startSignIn,
+    authSignOut: signOut,
+  });
+  await restoreSession();
   win = createOrbWindow();
   _trayRef = createTray(win);
   void _trayRef; // Keep reference to prevent garbage collection
