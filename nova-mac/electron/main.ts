@@ -23,6 +23,8 @@ app.whenReady().then(async () => {
     authStatus: getAuthState,
     authSignIn: startSignIn,
     authSignOut: signOut,
+    syncConversations: () => import("./sync").then((m) => m.listConversations()),
+    syncMemories: () => import("./sync").then((m) => m.listMemories()),
   });
   await restoreSession();
   win = createOrbWindow();

@@ -6,6 +6,8 @@ export interface NovaBridge {
   authSignIn(email: string): Promise<void>;
   authSignOut(): Promise<void>;
   onAuthChanged(cb: (s: AuthState) => void): void;
+  syncConversations(): Promise<import("@shared/types").ConversationSummary[]>;
+  syncMemories(): Promise<import("@shared/types").MemorySummary[]>;
 }
 
 declare global {

@@ -8,4 +8,6 @@ contextBridge.exposeInMainWorld("nova", {
   authSignOut: () => ipcRenderer.invoke(IpcChannel.AuthSignOut),
   onAuthChanged: (cb: (s: unknown) => void) =>
     ipcRenderer.on(IpcChannel.AuthChanged, (_e, s) => cb(s)),
+  syncConversations: () => ipcRenderer.invoke(IpcChannel.SyncConversations),
+  syncMemories: () => ipcRenderer.invoke(IpcChannel.SyncMemories),
 });
