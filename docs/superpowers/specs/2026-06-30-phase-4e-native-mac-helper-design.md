@@ -67,7 +67,7 @@ nova-mac/
 
 ### Models
 
-- **Chat turns:** `claude-sonnet-4-6` (matches web app default; complex asks can still escalate).
+- **Chat turns:** `claude-haiku-4-5` is the default (matches web app), with dynamic routing escalating to `claude-sonnet-4-6` for complex asks. In-chat override still works ("use sonnet", pin a model, etc.).
 - **Computer-use loop:** `claude-opus-4-8` with the `computer-use-2024-10-22` beta header — Opus handles long tool loops more reliably.
 - Shared system-prompt construction is **ported from `lib/chat/system-prompt.ts`** and adapted; we do not import the Next.js runtime.
 
@@ -136,13 +136,9 @@ mic (16kHz mono) → framing.ts (80ms frames, ring buffer)
 
 Screen awareness is a default behavior, not a toggle.
 
-### Per-message screenshot (baseline)
+### Per-message screenshot (on-demand only)
 
-On every command, `screen.ts` captures the active display, compresses to **1280×800 max, JPEG ~60% (~80KB)**, and prepends it to the Claude message as a vision image. Claude always knows what you're looking at.
-
-### Rolling passive buffer (ambient, default on, toggleable)
-
-A screenshot is captured every **8s** and the **last 5 frames** are held in memory (no disk, no Supabase). On send, the most recent frame is used so context is never stale. Buffer pauses during Working mode (the agent loop captures per-action anyway).
+Screen awareness is **capture-on-demand**: a screenshot is taken at the moment you send a command — not continuously. `screen.ts` captures the active display, compresses to **1280×800 max, JPEG ~60% (~80KB)**, and prepends it to the Claude message as a vision image. Claude sees exactly what is on your screen the instant you ask. There is no background/ambient capture loop — frames are only created in response to a user action (a command, or an agent-loop step).
 
 ### Privacy safeguards
 
@@ -290,7 +286,7 @@ Native Apple design first; **Liquid Glass is one ingredient, not the whole UI.**
 3. **Orb UI + state machine** — five states, chat sheet, motion, design language (mock data).
 4. **Wake word** — onnxruntime-node pipeline, framing, mic capture, threshold calibration.
 5. **Voice loop** — STT/TTS bridge reusing existing providers; full "Hey Jarvis → speak → response + TTS" path.
-6. **Screen context** — capture, compression, password-field suppression, passive buffer.
+6. **Screen context** — on-demand capture, compression, password-field suppression.
 7. **Chat + tools (non-computer)** — Anthropic client, ported system prompt, memory/reminder/calendar/file tools, receipts.
 8. **Computer-use agent loop** — plan_task → WorkflowCard → opus loop → Stop → Activity log.
 9. **Gated file cleanup + settings** — autonomous cleanup opt-in, wake-word settings, screen-context controls.
