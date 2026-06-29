@@ -206,7 +206,7 @@ export function WorkflowCard({
                   <span
                     className={`ml-1.5 rounded px-1 py-0.5 text-[10px] ${
                       step.riskLevel === "irreversible"
-                        ? "bg-amber-900/40 text-amber-300"
+                        ? "bg-red-900/40 text-red-300"
                         : step.riskLevel === "write"
                           ? "bg-blue-900/30 text-blue-300"
                           : "bg-[var(--surface-elevated)] text-[var(--text-secondary)]"
