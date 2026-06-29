@@ -10,7 +10,8 @@ export function App() {
 
   useEffect(() => {
     nova().authStatus().then(setAuth);
-    nova().onAuthChanged(setAuth);
+    const unsub = nova().onAuthChanged(setAuth);
+    return unsub;
   }, []);
 
   useEffect(() => {
