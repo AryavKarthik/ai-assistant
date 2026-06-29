@@ -22,7 +22,7 @@ import {
 
 const STORAGE_KEY = "assistant.voice.preferences";
 const VERSION_KEY = "assistant.voice.preferences.version";
-const PREFS_VERSION = 11;
+const PREFS_VERSION = 12;
 
 const ALLOWED_OPENAI_VOICES = new Set<string>(OPENAI_TTS_VOICES);
 const ALLOWED_GOOGLE_VOICES = new Set<string>(GOOGLE_TTS_VOICES);
@@ -218,6 +218,9 @@ export function loadVoicePreferences(): VoicePreferences {
         merged.ttsSpeed = DEFAULT_VOICE_PREFERENCES.ttsSpeed;
       }
       if (storedVersion < 11 && !parsed.deepgramTtsVoice) {
+        merged.deepgramTtsVoice = DEFAULT_VOICE_PREFERENCES.deepgramTtsVoice;
+      }
+      if (storedVersion < 12 && merged.deepgramTtsVoice === "aura-asteria-en") {
         merged.deepgramTtsVoice = DEFAULT_VOICE_PREFERENCES.deepgramTtsVoice;
       }
       saveVoicePreferences(merged);

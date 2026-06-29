@@ -11,7 +11,8 @@ export async function synthesizeWithDeepgram(
     );
   }
 
-  const response = await fetch(`${DEEPGRAM_API_URL}?model=${encodeURIComponent(voice)}`, {
+  const url = `${DEEPGRAM_API_URL}?model=${encodeURIComponent(voice)}&encoding=mp3&container=mp3&sample_rate=48000`;
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       Authorization: `Token ${apiKey}`,
