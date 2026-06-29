@@ -1,7 +1,7 @@
 -- Phase 4C: Agentic workflow persistence
 -- workflow_runs: top-level workflow state (plan → approved → running → completed/failed/cancelled)
 CREATE TABLE workflow_runs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   conversation_id UUID NOT NULL,
   title TEXT NOT NULL,
@@ -14,7 +14,7 @@ CREATE TABLE workflow_runs (
 
 -- workflow_steps: one row per planned tool call
 CREATE TABLE workflow_steps (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   workflow_run_id UUID NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
   step_index INTEGER NOT NULL,
   tool_name TEXT NOT NULL,
