@@ -26,6 +26,12 @@ app.whenReady().then(async () => {
     syncConversations: () => import("./sync").then((m) => m.listConversations()),
     syncMemories: () => import("./sync").then((m) => m.listMemories()),
   });
+  try {
+    const { probeNative } = await import("./native-probe/index.js");
+    console.log("[nova] native probe:", probeNative());
+  } catch (e) {
+    console.warn("[nova] native probe unavailable in dev:", (e as Error).message);
+  }
   await restoreSession();
   win = createOrbWindow();
   _trayRef = createTray(win);

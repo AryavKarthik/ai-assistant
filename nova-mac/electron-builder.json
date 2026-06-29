@@ -1,5 +1,16 @@
 {
   "appId": "com.nova.mac",
   "productName": "Nova",
-  "protocols": [{ "name": "Nova", "schemes": ["nova"] }]
+  "protocols": [{ "name": "Nova", "schemes": ["nova"] }],
+  "asarUnpack": ["**/*.node"],
+  "files": ["out/**", "build/**", "package.json"],
+  "mac": {
+    "category": "public.app-category.productivity",
+    "target": ["dmg"],
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "notarize": true
+  }
 }
