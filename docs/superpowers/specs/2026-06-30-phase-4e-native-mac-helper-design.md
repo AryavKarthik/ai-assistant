@@ -132,6 +132,20 @@ mic (16kHz mono) → framing.ts (80ms frames, ring buffer)
 
 ---
 
+## 3a. Voice Pipeline — Reuse Web Barge-In + Room for Live Models
+
+The Mac voice loop **reuses the web app's voice processing**, ported into the Electron renderer/main split rather than reinvented:
+
+- **Barge-in:** port `lib/voice/tts-barge-in.ts` + `lib/voice/vad.ts` logic. While TTS is playing, the mic stays open through a VAD; detected user speech above threshold **interrupts playback immediately** (same behavior as the website), cancels in-flight TTS, and transitions the orb back to Listening. The existing `mic-session.ts` gating, `sentence-buffer.ts` sentence-at-a-time TTS prefetch, and `player.ts` playback model carry over.
+- **Providers:** carry over the existing `SttProvider` (`openai` | `google`) and `TtsProvider` (`openai` | `google` | `deepgram`) abstractions and their `stt/` + `tts/` provider folders. The Mac app selects providers from `user_preferences` exactly as the web app does.
+
+### Extensibility: future live / direct-speech models
+
+The voice layer must **leave room for realtime speech-to-speech ("live") models** — e.g., Google Gemini Native Audio 2.5, OpenAI Realtime — without rewriting the loop. Design requirement:
+
+- Introduce a `VoiceMode` abstraction with two implementations behind one interface: **`pipeline`** (today: STT → Claude → TTS, the current architecture) and **`live`** (future: a single bidirectional audio stream to a speech-native model). The orb state machine, barge-in, and wake word sit **above** this interface so either mode drives the same UI.
+- Add a `LiveVoiceProvider` seam (e.g. `google-native` | `openai-realtime`) parallel to `SttProvider`/`TtsProvider`, selectable in settings, defaulting to `pipeline` mode. No live provider is implemented in Phase 4E — only the interface and a stubbed registry so a later phase drops one in.
+
 ## 4. Screen Context — Always-On, First-Class
 
 Screen awareness is a default behavior, not a toggle.
@@ -233,6 +247,17 @@ Supabase magic-link, opened in the system browser via `shell.openExternal()`. Th
 
 Direct `@supabase/supabase-js` against the existing tables — `conversations`, `messages`, `memories`, `memory_links`, `reminders`, `workflow_runs`, `user_preferences`. Conversations started in the browser appear in the Mac app and vice versa. No schema changes required for core sync; an optional `client` column on `messages` (values `web` | `mac`) may be added to distinguish origin (nice-to-have, not required).
 
+### Memory keeps growing (write pipeline, not just read)
+
+Because the Mac app calls Claude directly (bypassing Vercel), it must run the **same memory-write pipeline** the web app runs — memory does not become read-only on the Mac. The framework-agnostic modules from `lib/memory/` are **ported into the Mac app's main process** (they use `@supabase/supabase-js` + `fetch` to OpenAI, no Next runtime):
+
+- `saveMemory` — upsert a memory row (with dedup/merge via `merge.ts` / `reconcile.ts`)
+- `classifyMemory` — type classification (pattern-match → Haiku fallback)
+- `embedText` — OpenAI `text-embedding-3-small` (1536-dim) for pgvector
+- `detectAndLinkRelationships` — auto-link related/contradicting memories
+
+After each chat turn, the Mac app extracts and saves new memories exactly as the web app does (fire-and-forget embed + relationship linking), writing to the same `memories` / `memory_links` tables. Salience, decay (the weekly cron stays server-side), and hybrid retrieval all continue to work because it is the same Postgres backend. Memories created on the Mac appear in the browser Memory Manager and vice versa.
+
 ### macOS permissions — onboarding flow (4 cards, in order)
 
 1. **Microphone** *(required)* — always-on wake word; card states audio is processed on-device by openWakeWord, nothing sent to a server for detection. Opens Privacy → Microphone.
@@ -285,9 +310,9 @@ Native Apple design first; **Liquid Glass is one ingredient, not the whole UI.**
 2. **Auth + Supabase sync** — magic-link, Keychain session, read existing conversations.
 3. **Orb UI + state machine** — five states, chat sheet, motion, design language (mock data).
 4. **Wake word** — onnxruntime-node pipeline, framing, mic capture, threshold calibration.
-5. **Voice loop** — STT/TTS bridge reusing existing providers; full "Hey Jarvis → speak → response + TTS" path.
+5. **Voice loop** — STT/TTS bridge reusing existing providers + ported barge-in/VAD; full "Hey Jarvis → speak → response + TTS" path; `VoiceMode` (`pipeline` now, `live` seam stubbed) + `LiveVoiceProvider` registry for future direct-speech models.
 6. **Screen context** — on-demand capture, compression, password-field suppression.
-7. **Chat + tools (non-computer)** — Anthropic client, ported system prompt, memory/reminder/calendar/file tools, receipts.
+7. **Chat + tools (non-computer)** — Anthropic client, ported system prompt, memory/reminder/calendar/file tools, receipts, and the **memory-write pipeline** (saveMemory/classify/embed/link) so memory keeps growing.
 8. **Computer-use agent loop** — plan_task → WorkflowCard → opus loop → Stop → Activity log.
 9. **Gated file cleanup + settings** — autonomous cleanup opt-in, wake-word settings, screen-context controls.
 10. **Onboarding permission flow + polish + auto-update.**
