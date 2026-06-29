@@ -114,19 +114,29 @@ export async function POST(request: Request, context: RouteContext) {
             hasError ? String(result.error) : null,
           );
 
-          const receipt = buildReceipt(step.tool_name, result);
-          receipts.push(receipt);
-
-          controller.enqueue(
-            encode(
-              sseEvent({
-                type: "step_complete",
-                stepIndex: step.step_index,
-                receipt,
-                failed: hasError,
-              }),
-            ),
-          );
+          if (hasError) {
+            controller.enqueue(
+              encode(
+                sseEvent({
+                  type: "step_failed",
+                  stepIndex: step.step_index,
+                  error: String(result.error),
+                }),
+              ),
+            );
+          } else {
+            const receipt = buildReceipt(step.tool_name, result);
+            receipts.push(receipt);
+            controller.enqueue(
+              encode(
+                sseEvent({
+                  type: "step_complete",
+                  stepIndex: step.step_index,
+                  receipt,
+                }),
+              ),
+            );
+          }
         }
 
         await updateWorkflowStatus(id, "completed");
