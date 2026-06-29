@@ -86,7 +86,30 @@ export async function createWorkflowRun(params: {
     .from("workflow_steps")
     .insert(stepRows);
 
-  if (stepsError) throw stepsError;
+  if (stepsError) {
+    // Clean up orphaned run if steps insert fails
+    try {
+      await supabase.from("workflow_runs").delete().eq("id", run.id);
+    } catch {
+      // Ignore cleanup errors
+    }
+    throw stepsError;
+  }
+
+  return run;
+}
+
+export async function getWorkflowRun(id: string): Promise<WorkflowRunRow | null> {
+  const supabase = createServerClient();
+
+  const { data: run, error: runError } = await supabase
+    .from("workflow_runs")
+    .select("*")
+    .eq("id", id)
+    .single<WorkflowRunRow>();
+
+  if (runError) return null;
+  if (!run) return null;
 
   return run;
 }
@@ -111,6 +134,9 @@ export async function getWorkflowWithSteps(
     .eq("workflow_run_id", id)
     .order("step_index", { ascending: true });
 
+  // If the run exists but we can't query its steps, that's a database problem.
+  // We throw here to surface the issue to callers rather than silently returning
+  // inconsistent data (a run with missing steps).
   if (stepsError) throw stepsError;
 
   return { ...run, steps: (steps ?? []) as WorkflowStepRow[] };
