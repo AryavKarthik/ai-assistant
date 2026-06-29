@@ -29,19 +29,6 @@ export const OPENAI_TTS_VOICES = [
 export type OpenAiTtsVoice = (typeof OPENAI_TTS_VOICES)[number];
 
 export const DEEPGRAM_TTS_VOICES = [
-  // Aura-2 (newer, higher quality)
-  "aura-2-asteria-en",
-  "aura-2-luna-en",
-  "aura-2-stella-en",
-  "aura-2-hera-en",
-  "aura-2-orion-en",
-  "aura-2-arcas-en",
-  "aura-2-zeus-en",
-  "aura-2-perseus-en",
-  "aura-2-angus-en",
-  "aura-2-helios-en",
-  "aura-2-orpheus-en",
-  // Aura (original)
   "aura-asteria-en",
   "aura-luna-en",
   "aura-stella-en",
