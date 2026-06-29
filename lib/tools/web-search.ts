@@ -41,11 +41,16 @@ export async function braveWebSearch(
     return { results: [], error: `Brave Search API returned ${response.status}` };
   }
 
-  const data = (await response.json()) as {
+  let data: {
     web?: {
       results?: Array<{ title?: string; url?: string; description?: string }>;
     };
   };
+  try {
+    data = (await response.json()) as typeof data;
+  } catch {
+    return { results: [], error: "Failed to parse search API response" };
+  }
 
   const results = (data.web?.results ?? []).map((r) => ({
     title: r.title ?? "",

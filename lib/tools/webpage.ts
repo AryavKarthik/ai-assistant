@@ -67,7 +67,12 @@ export async function fetchWebpage(url: string): Promise<{
     };
   }
 
-  const html = await response.text();
+  let html: string;
+  try {
+    html = await response.text();
+  } catch {
+    return { url, title: "", content: "", truncated: false, error: "Failed to read response body" };
+  }
   const title = extractTitle(html);
   const raw = htmlToText(html);
   const truncated = raw.length > MAX_CONTENT_CHARS;
