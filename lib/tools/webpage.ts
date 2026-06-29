@@ -1,5 +1,23 @@
 const MAX_CONTENT_CHARS = 3000;
 
+function isPrivateIp(hostname: string): boolean {
+  // Block loopback
+  if (hostname === "localhost" || hostname === "::1") return true;
+  // Match IPv4
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(hostname);
+  if (ipv4) {
+    const [, a, b] = ipv4.map(Number);
+    return (
+      a === 10 ||                           // 10.0.0.0/8
+      a === 127 ||                          // 127.0.0.0/8
+      (a === 172 && b >= 16 && b <= 31) ||  // 172.16.0.0/12
+      (a === 192 && b === 168) ||           // 192.168.0.0/16
+      (a === 169 && b === 254)              // 169.254.0.0/16
+    );
+  }
+  return false;
+}
+
 function extractTitle(html: string): string {
   const match = /<title[^>]*>([^<]*)<\/title>/i.exec(html);
   return match ? match[1].trim().replace(/\s+/g, " ") : "";
@@ -29,13 +47,17 @@ export async function fetchWebpage(url: string): Promise<{
   truncated: boolean;
   error?: string;
 }> {
+  let parsed: URL;
   try {
-    const parsed = new URL(url);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return { url, title: "", content: "", truncated: false, error: "Only http/https URLs are supported" };
-    }
+    parsed = new URL(url);
   } catch {
     return { url, title: "", content: "", truncated: false, error: "Invalid URL" };
+  }
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    return { url, title: "", content: "", truncated: false, error: "Only http/https URLs are supported" };
+  }
+  if (isPrivateIp(parsed.hostname)) {
+    return { url, title: "", content: "", truncated: false, error: "Private/internal URLs are not allowed" };
   }
 
   let response: Response;
