@@ -769,8 +769,13 @@ export function ChatScreen() {
           };
         }),
       );
+      const message = messages.find((m) => m.id === messageId);
+      const updatedReceipts = (message?.actionReceipts ?? []).map((r) =>
+        r.id === receiptId ? { ...r, dismissed: true } : r,
+      );
+      void persistMessageReceipts(messageId, updatedReceipts);
     },
-    [],
+    [messages],
   );
 
   const handleSend = useCallback(

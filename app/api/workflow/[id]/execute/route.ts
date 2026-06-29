@@ -67,6 +67,7 @@ export async function POST(request: Request, context: RouteContext) {
         await updateWorkflowStatus(id, "running");
 
         const receipts: ChatActionReceipt[] = [];
+        let failedCount = 0;
 
         for (const step of steps) {
           controller.enqueue(
@@ -93,6 +94,7 @@ export async function POST(request: Request, context: RouteContext) {
           } catch (err) {
             const errorMsg =
               err instanceof Error ? err.message : "Unexpected error";
+            failedCount++;
             await updateStepStatus(step.id, "failed", null, errorMsg);
             controller.enqueue(
               encode(
@@ -115,6 +117,7 @@ export async function POST(request: Request, context: RouteContext) {
           );
 
           if (hasError) {
+            failedCount++;
             controller.enqueue(
               encode(
                 sseEvent({
@@ -139,12 +142,13 @@ export async function POST(request: Request, context: RouteContext) {
           }
         }
 
-        await updateWorkflowStatus(id, "completed");
+        await updateWorkflowStatus(id, failedCount > 0 ? "failed" : "completed");
         controller.enqueue(
           encode(
             sseEvent({
               type: "workflow_complete",
               totalSteps: steps.length,
+              failedSteps: failedCount,
               receipts,
             }),
           ),

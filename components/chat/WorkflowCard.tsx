@@ -64,67 +64,71 @@ export function WorkflowCard({
       const allReceipts: ChatActionReceipt[] = [];
       let buffer = "";
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() ?? "";
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n\n");
+          buffer = lines.pop() ?? "";
 
-        for (const chunk of lines) {
-          if (!chunk.startsWith("data: ")) continue;
-          const json = chunk.slice(6).trim();
-          if (!json) continue;
+          for (const chunk of lines) {
+            if (!chunk.startsWith("data: ")) continue;
+            const json = chunk.slice(6).trim();
+            if (!json) continue;
 
-          let event: Record<string, unknown>;
-          try {
-            event = JSON.parse(json) as Record<string, unknown>;
-          } catch {
-            continue;
-          }
+            let event: Record<string, unknown>;
+            try {
+              event = JSON.parse(json) as Record<string, unknown>;
+            } catch {
+              continue;
+            }
 
-          if (event.type === "step_start") {
-            const idx = event.stepIndex as number;
-            setStepStatuses((prev) =>
-              prev.map((s) =>
-                s.stepIndex === idx ? { ...s, state: "running" } : s,
-              ),
-            );
-          } else if (event.type === "step_complete") {
-            const idx = event.stepIndex as number;
-            const receipt = event.receipt as ChatActionReceipt | undefined;
-            if (receipt) allReceipts.push(receipt);
-            setStepStatuses((prev) =>
-              prev.map((s) =>
-                s.stepIndex === idx
-                  ? {
-                      ...s,
-                      state: "completed",
-                      receipt: receipt ?? undefined,
-                    }
-                  : s,
-              ),
-            );
-          } else if (event.type === "step_failed") {
-            const idx = event.stepIndex as number;
-            const errMsg = typeof event.error === "string" ? event.error : "Failed";
-            setStepStatuses((prev) =>
-              prev.map((s) =>
-                s.stepIndex === idx
-                  ? { ...s, state: "failed", error: errMsg }
-                  : s,
-              ),
-            );
-          } else if (event.type === "workflow_complete") {
-            setWorkflowState("done");
-            onComplete(allReceipts);
-          } else if (event.type === "workflow_error") {
-            const errMsg = typeof event.error === "string" ? event.error : "Workflow failed";
-            setError(errMsg);
-            setWorkflowState("error");
+            if (event.type === "step_start") {
+              const idx = event.stepIndex as number;
+              setStepStatuses((prev) =>
+                prev.map((s) =>
+                  s.stepIndex === idx ? { ...s, state: "running" } : s,
+                ),
+              );
+            } else if (event.type === "step_complete") {
+              const idx = event.stepIndex as number;
+              const receipt = event.receipt as ChatActionReceipt | undefined;
+              if (receipt) allReceipts.push(receipt);
+              setStepStatuses((prev) =>
+                prev.map((s) =>
+                  s.stepIndex === idx
+                    ? {
+                        ...s,
+                        state: "completed",
+                        receipt: receipt ?? undefined,
+                      }
+                    : s,
+                ),
+              );
+            } else if (event.type === "step_failed") {
+              const idx = event.stepIndex as number;
+              const errMsg = typeof event.error === "string" ? event.error : "Failed";
+              setStepStatuses((prev) =>
+                prev.map((s) =>
+                  s.stepIndex === idx
+                    ? { ...s, state: "failed", error: errMsg }
+                    : s,
+                ),
+              );
+            } else if (event.type === "workflow_complete") {
+              setWorkflowState("done");
+              onComplete(allReceipts);
+            } else if (event.type === "workflow_error") {
+              const errMsg = typeof event.error === "string" ? event.error : "Workflow failed";
+              setError(errMsg);
+              setWorkflowState("error");
+            }
           }
         }
+      } finally {
+        reader.releaseLock();
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Execution failed";
