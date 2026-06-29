@@ -220,7 +220,7 @@ export function loadVoicePreferences(): VoicePreferences {
       if (storedVersion < 11 && !parsed.deepgramTtsVoice) {
         merged.deepgramTtsVoice = DEFAULT_VOICE_PREFERENCES.deepgramTtsVoice;
       }
-      if (storedVersion < 12 && merged.deepgramTtsVoice.startsWith("aura-2-")) {
+      if (storedVersion < 12 && (merged.deepgramTtsVoice.startsWith("aura-2-") || merged.deepgramTtsVoice === "aura-asteria-en")) {
         merged.deepgramTtsVoice = DEFAULT_VOICE_PREFERENCES.deepgramTtsVoice;
       }
       saveVoicePreferences(merged);
