@@ -4,13 +4,14 @@ import { createTray } from "./tray";
 
 let win: BrowserWindow | null = null;
 // Hold a reference so the tray is not garbage-collected.
-let trayRef: ReturnType<typeof createTray> | null = null;
+let _trayRef: ReturnType<typeof createTray> | null = null;
 
 app.dock?.hide(); // no Dock icon — tray-only
 
 app.whenReady().then(() => {
   win = createOrbWindow();
-  trayRef = createTray(win);
+  _trayRef = createTray(win);
+  void _trayRef; // Keep reference to prevent garbage collection
   globalShortcut.register("CommandOrControl+Shift+Space", () => {
     if (!win) return;
     win.isVisible() ? win.hide() : win.show();
