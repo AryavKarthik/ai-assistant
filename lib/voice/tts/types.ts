@@ -44,6 +44,7 @@ export interface TtsSynthesizeOptions {
   provider?: TtsProvider;
   openAiTtsModel?: OpenAiTtsModel;
   googleTtsQuality?: GoogleVoiceQuality;
+  deepgramTtsVoice?: string;
   signal?: AbortSignal;
 }
 
