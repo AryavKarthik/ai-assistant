@@ -7,7 +7,7 @@ export interface VoicePlayerOptions {
   voice: string;
   speed: number;
   hd?: boolean;
-  provider?: "openai" | "google" | "deepgram";
+  provider?: import("@/lib/voice/types").TtsProvider;
   openAiTtsModel?: import("@/lib/voice/types").OpenAiTtsModel;
   googleTtsQuality?: import("@/lib/voice/types").GoogleVoiceQuality;
   deepgramTtsVoice?: string;

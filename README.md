@@ -44,6 +44,7 @@ A chat-first personal AI assistant that feels like one brain.
    - `ANTHROPIC_API_KEY`
    - `OPENAI_API_KEY` (voice STT + TTS when using OpenAI providers)
    - `GCP_PROJECT_ID` (optional — Google Cloud Speech/TTS)
+   - `DEEPGRAM_API_KEY` (optional — Deepgram Aura TTS provider; enables Deepgram TTS in voice settings)
    - `GCP_SERVICE_ACCOUNT_JSON` (optional — **single-line** JSON for Vercel; do not use multi-line in `.env`)
    - `GOOGLE_APPLICATION_CREDENTIALS` (optional — local path to service account key file, recommended for dev)
    - `ANTHROPIC_MODEL` (optional global default)
@@ -502,6 +503,7 @@ Voice-first is a valid *UX* north star, but **proactive + agentic layers should 
 ```bash
 OPENAI_API_KEY=              # OpenAI STT/TTS
 GCP_PROJECT_ID=              # Google Cloud Speech + TTS
+DEEPGRAM_API_KEY=            # Deepgram Aura TTS provider (optional, enables Deepgram TTS in voice settings)
 GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json   # local dev (recommended)
 GCP_SERVICE_ACCOUNT_JSON=    # Vercel: entire JSON on ONE line
 ```
