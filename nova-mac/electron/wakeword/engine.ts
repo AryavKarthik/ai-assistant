@@ -16,6 +16,7 @@ export class WakeWordEngine {
   private ring = new AudioRingBuffer();
   private melWindow = new WindowAccumulator(MEL_FRAMES_PER_EMBEDDING, MEL_BINS);
   private embWindow = new WindowAccumulator(EMBEDDINGS_PER_PREDICTION, 96);
+  private loggedFirstFrame = false;
 
   constructor(private readonly modelsDir: string) {}
 
@@ -35,13 +36,25 @@ export class WakeWordEngine {
     const melIn = new ort.Tensor("float32", samples, [1, samples.length]);
     const melOut = await this.mel.run({ [this.mel.inputNames[0]!]: melIn });
     const melTensor = melOut[this.mel.outputNames[0]!]!;
-    const melData = melTensor.data as Float32Array;
+    // Apply openWakeWord normalization: matches Python `spec = (spec / 10) + 2`
+    // Raw log-mel values are in ~[-60, 0] dB; this maps them to ~[-4, 2] for the embedding model.
+    const melData = Float32Array.from(melTensor.data as Float32Array, (v) => v / 10 + 2);
     const melFrames = melData.length / MEL_BINS;
+
+    if (!this.loggedFirstFrame) {
+      this.loggedFirstFrame = true;
+      const raw = melTensor.data as Float32Array;
+      console.log("[nova] mel inputNames:", this.mel.inputNames, "outputNames:", this.mel.outputNames);
+      console.log("[nova] mel output dims:", melTensor.dims, "frames:", melFrames, "bins:", MEL_BINS);
+      console.log("[nova] mel raw range:", Math.min(...raw).toFixed(2), "to", Math.max(...raw).toFixed(2));
+      console.log("[nova] mel normalized range:", Math.min(...melData).toFixed(2), "to", Math.max(...melData).toFixed(2));
+      console.log("[nova] embed inputNames:", this.embed.inputNames, "outputNames:", this.embed.outputNames);
+      console.log("[nova] wake inputNames:", this.wake.inputNames, "outputNames:", this.wake.outputNames);
+    }
 
     let lastScore: number | null = null;
     for (let f = 0; f < melFrames; f++) {
-      const row = new Float32Array(MEL_BINS);
-      for (let b = 0; b < MEL_BINS; b++) row[b] = melData[f * MEL_BINS + b]! / 10 + 2;
+      const row = new Float32Array(melData.buffer, melData.byteOffset + f * MEL_BINS * 4, MEL_BINS);
       const melWin = this.melWindow.push(row);
       if (!melWin) continue;
 

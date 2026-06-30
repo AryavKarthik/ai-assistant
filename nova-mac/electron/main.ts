@@ -65,8 +65,8 @@ app.whenReady().then(async () => {
   try {
     const { probeNative } = await import("./native-probe/index.js");
     console.log("[nova] native probe:", probeNative());
-  } catch (e) {
-    console.warn("[nova] native probe unavailable in dev:", (e as Error).message);
+  } catch {
+    console.warn("[nova] native probe not built (expected in dev)");
   }
   await restoreSession();
   win = createOrbWindow();
