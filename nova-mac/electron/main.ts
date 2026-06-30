@@ -8,7 +8,8 @@ loadEnv({ path: [".env.local", ".env"] });
 import { app, BrowserWindow, globalShortcut } from "electron";
 import { createOrbWindow } from "./window";
 import { createTray } from "./tray";
-import { registerIpcHandlers } from "./ipc";
+import { registerIpcHandlers, registerChatBridge } from "./ipc";
+import { streamChat, cancelChat } from "./chat";
 import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
 
 let win: BrowserWindow | null = null;
@@ -34,6 +35,11 @@ app.whenReady().then(async () => {
     syncMemories: () => import("./sync").then((m) => m.listMemories()),
     transcribe: (req, provider) => import("./voice/stt").then((m) => m.transcribe(req, provider)),
     synthesize: (req) => import("./voice/tts").then((m) => m.synthesize(req)),
+  });
+  registerChatBridge({
+    start: (req, sender) =>
+      void streamChat(req, (channel, payload) => sender.send(channel, payload)),
+    cancel: cancelChat,
   });
   try {
     const { probeNative } = await import("./native-probe/index.js");

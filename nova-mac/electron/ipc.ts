@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { ipcMain, type WebContents } from "electron";
 import { IpcChannel, type AuthState, type ConversationSummary, type MemorySummary } from "@shared/types";
 
 export interface IpcHandlers {
@@ -10,6 +10,16 @@ export interface IpcHandlers {
   syncMemories(): Promise<MemorySummary[]>;
   transcribe(req: import("@shared/types").TranscribeRequest, provider: import("@shared/types").SttProvider): Promise<string>;
   synthesize(req: import("@shared/types").SynthesizeRequest): Promise<import("@shared/types").SynthesizeResult>;
+}
+
+export interface ChatBridge {
+  start(req: import("@shared/types").ChatSendRequest, sender: WebContents): void;
+  cancel(requestId: string): void;
+}
+
+export function registerChatBridge(bridge: ChatBridge): void {
+  ipcMain.on(IpcChannel.ChatSend, (e, req) => bridge.start(req, e.sender));
+  ipcMain.on(IpcChannel.ChatCancel, (_e, requestId: string) => bridge.cancel(requestId));
 }
 
 export function registerIpcHandlers(handlers: IpcHandlers): void {

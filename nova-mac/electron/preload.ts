@@ -16,4 +16,21 @@ contextBridge.exposeInMainWorld("nova", {
   transcribe: (req: unknown, provider: unknown) =>
     ipcRenderer.invoke(IpcChannel.VoiceTranscribe, req, provider),
   synthesize: (req: unknown) => ipcRenderer.invoke(IpcChannel.VoiceSynthesize, req),
+  chatSend: (req: unknown) => ipcRenderer.send(IpcChannel.ChatSend, req),
+  chatCancel: (requestId: string) => ipcRenderer.send(IpcChannel.ChatCancel, requestId),
+  onChatDelta: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.ChatDelta, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ChatDelta, h);
+  },
+  onChatDone: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.ChatDone, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ChatDone, h);
+  },
+  onChatError: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.ChatError, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ChatError, h);
+  },
 });

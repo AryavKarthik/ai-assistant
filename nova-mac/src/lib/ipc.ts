@@ -15,6 +15,11 @@ export interface NovaBridge {
   synthesize(
     req: import("@shared/types").SynthesizeRequest,
   ): Promise<import("@shared/types").SynthesizeResult>;
+  chatSend(req: import("@shared/types").ChatSendRequest): void;
+  chatCancel(requestId: string): void;
+  onChatDelta(cb: (p: import("@shared/types").ChatStreamDelta) => void): () => void;
+  onChatDone(cb: (p: import("@shared/types").ChatStreamDone) => void): () => void;
+  onChatError(cb: (p: import("@shared/types").ChatStreamError) => void): () => void;
 }
 
 declare global {
