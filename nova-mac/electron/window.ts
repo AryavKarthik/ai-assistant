@@ -24,6 +24,12 @@ export function createOrbWindow(): BrowserWindow {
   });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 
+  // Allow mic + camera access — without this Electron silently denies getUserMedia.
+  // macOS will still show its own permission dialog on first use.
+  win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
+    callback(permission === "media" || permission === "mediaKeySystem");
+  });
+
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
     // Dev only: surface the window + console so renderer errors are visible.

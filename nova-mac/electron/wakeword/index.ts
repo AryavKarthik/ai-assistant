@@ -18,7 +18,7 @@ export class WakeWordController {
       dirname(fileURLToPath(import.meta.url)),
       "models",
     ),
-    private readonly threshold = 0.5,
+    private readonly threshold = 0.05,
   ) {}
 
   start(onWake: () => void): void {
@@ -28,7 +28,9 @@ export class WakeWordController {
       workerData: { modelsDir: this.modelsDir },
     });
     this.worker.on("message", (msg: { type: string; score?: number }) => {
+      if (msg.type === "ready") { console.log("[nova] wake engine ready"); return; }
       if (msg.type !== "score" || msg.score == null) return;
+      if (msg.score > 0.001) console.log("[nova] wake score", msg.score.toFixed(4));
       this.handleScore(msg.score);
     });
     this.worker.on("error", (e) => console.error("[nova] wake worker error", e));
@@ -45,8 +47,11 @@ export class WakeWordController {
     }
   }
 
+  private frameCount = 0;
   pushFrame(buf: ArrayBuffer): void {
     if (!this.enabled || this.pausedForTurn) return;
+    this.frameCount++;
+    if (this.frameCount % 50 === 0) console.log("[nova] wake frames received:", this.frameCount);
     this.worker?.postMessage({ type: "frame", buf }, [buf]);
   }
 

@@ -14,11 +14,28 @@ export default defineConfig({
           worker: "electron/wakeword/worker.ts",
         },
       },
+      rollupOptions: {
+        // onnxruntime-node loads native .node bindings via dynamic require at
+        // runtime — Rollup cannot statically bundle them. Mark as external so
+        // Node resolves them from node_modules at runtime instead.
+        external: ["onnxruntime-node", "ws"],
+      },
     },
     resolve: { alias: sharedAlias },
   },
   preload: {
-    build: { outDir: "out/preload", lib: { entry: "electron/preload.ts" } },
+    build: {
+      outDir: "out/preload",
+      lib: { entry: "electron/preload.ts" },
+      rollupOptions: {
+        output: {
+          // Electron sandbox requires CJS for preload scripts.
+          // "type":"module" in package.json would otherwise emit .mjs.
+          format: "cjs",
+          entryFileNames: "[name].js",
+        },
+      },
+    },
     resolve: { alias: sharedAlias },
   },
   renderer: {

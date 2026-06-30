@@ -16,16 +16,36 @@ export async function startSignIn(email: string): Promise<void> {
 }
 
 export async function handleAuthCallback(url: string): Promise<void> {
-  // url looks like nova://auth-callback#access_token=...&refresh_token=...
-  const hash = url.split("#")[1] ?? "";
-  const params = new URLSearchParams(hash);
-  const access_token = params.get("access_token");
-  const refresh_token = params.get("refresh_token");
-  if (!access_token || !refresh_token) return;
-  const { error } = await getSupabase().auth.setSession({ access_token, refresh_token });
-  if (error) throw error;
-  saveSession({ access_token, refresh_token });
-  emit(IpcChannel.AuthChanged, await getAuthState());
+  console.log("[nova] auth callback url:", url);
+  // Supabase can deliver tokens as hash (#access_token=...) or query param (?code=...)
+  const hashPart = url.split("#")[1] ?? "";
+  const queryPart = url.split("?")[1]?.split("#")[0] ?? "";
+  const hashParams = new URLSearchParams(hashPart);
+  const queryParams = new URLSearchParams(queryPart);
+
+  const access_token = hashParams.get("access_token");
+  const refresh_token = hashParams.get("refresh_token");
+  const code = queryParams.get("code");
+
+  if (access_token && refresh_token) {
+    const { error } = await getSupabase().auth.setSession({ access_token, refresh_token });
+    if (error) { console.error("[nova] setSession error:", error); throw error; }
+    saveSession({ access_token, refresh_token });
+    emit(IpcChannel.AuthChanged, await getAuthState());
+    return;
+  }
+
+  if (code) {
+    const { data, error } = await getSupabase().auth.exchangeCodeForSession(code);
+    if (error) { console.error("[nova] exchangeCode error:", error); throw error; }
+    if (data.session) {
+      saveSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+      emit(IpcChannel.AuthChanged, await getAuthState());
+    }
+    return;
+  }
+
+  console.warn("[nova] auth callback: no tokens or code found in url");
 }
 
 export async function restoreSession(): Promise<void> {

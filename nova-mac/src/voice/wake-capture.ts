@@ -12,7 +12,8 @@ export function startWakeCapture(
   const ctx = new AudioContext({ sampleRate: 16000 });
   const source = ctx.createMediaStreamSource(stream);
   // ScriptProcessorNode is deprecated but universally supported in Electron/Chromium
-  const node = ctx.createScriptProcessor(4096, 1, 0);
+  // 1 output channel required to connect to destination; output is silent (input-only processing)
+  const node = ctx.createScriptProcessor(4096, 1, 1);
   let acc: number[] = [];
 
   node.onaudioprocess = (e) => {
