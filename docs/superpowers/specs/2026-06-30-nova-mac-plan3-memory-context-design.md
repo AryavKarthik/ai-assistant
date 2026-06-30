@@ -1,66 +1,93 @@
 # Nova Mac — Plan 3: Memory + Conversation Context
 
-**Date:** 2026-06-30  
-**Scope:** Core recall — conversation history, memory retrieval (memories + reminders), and full-fidelity memory writes (classify/reconcile/dedup/embed/relationships)  
-**Excluded:** Tools (save_memory, create_reminder tool-call loop), dynamic model routing, Google integrations
+**Date:** 2026-07-01 (revised)
+**Scope:** Full parity with the web app's `runTurn` — conversation history, dynamic intent + model routing, memory/reminder retrieval, tool-call loop, and full-fidelity memory writes — adapted for the Electron main process and the existing streaming IPC shape.  
+**Excluded:** `plan_workflow` tool (requires web review UI not present on Mac); Google OAuth integrations (Calendar/Gmail/YouTube tools included but return "not connected" gracefully until a future OAuth plan wires them).
 
 ---
 
 ## Problem
 
-`electron/chat.ts` is a bare Anthropic stream: a fixed system prompt with no context about the user, no conversation history, and only the latest transcript as input. Nova-on-Mac is stateless — it cannot recall facts between turns, cannot reference prior messages in the same session, and cannot surface upcoming reminders. This is the highest-value gap between the Mac app and the web app.
+`electron/chat.ts` is a bare Anthropic stream: a fixed system prompt, no conversation history, no memory retrieval, no tools, and only the latest transcript as input. Nova-on-Mac is stateless and featureless compared to the web app — it cannot recall facts, reference prior turns, set reminders, log workouts, or search the web. This plan brings the Mac to full web-app parity.
 
 ---
 
 ## Goals
 
-1. Nova retains **conversation history** within and across app launches (last 24 messages ≈ 12 turns).
-2. Nova **retrieves relevant memories and upcoming reminders** before each turn and injects them into the conversation turn (prepended to the latest user message, not the system prompt).
-3. Nova **persists new facts** after each turn using the full classify → reconcile/merge/dedup → embed → relationship-link pipeline, keeping the shared Supabase store consistent with the web app.
-4. The existing `ChatDelta` / `ChatDone` / `ChatError` IPC shape is **unchanged** — `useVoice.ts` in the renderer requires zero modification.
-5. API keys stay in the main process. The renderer is unaware of `userId`, `conversationId`, or any memory state.
-6. Retrieval failures **never block** the spoken reply (1200 ms voice deadline, graceful degradation).
+1. **Conversation history** — thread prior turns from the shared `messages` table (voice: 8 msgs, text: 40 msgs, matching `applyVoiceRetrievalOverrides`).
+2. **Dynamic intent routing** — per-turn `inferContextIntent` → `resolveRetrievalPlan` → `applyVoiceRetrievalOverrides` (voice) to fetch the right context at the right depth.
+3. **Dynamic model routing** — `inferComplexity` (light=Haiku, heavy=Sonnet) for text turns; voice always uses the light model (matching web).
+4. **Memory + reminder retrieval** — hybrid pgvector + `pg_trgm` search with pinned/profile tiers + upcoming reminders, injected as `<relevant_context>` into the user message.
+5. **Full tool-call loop** — port all 16 tools from `TOOL_DEFINITIONS` (excluding `plan_workflow`); `MAX_TOOL_ITERATIONS = 3` for voice, `10` for text (matching web).
+6. **Full memory write pipeline** — pattern extraction → classify → reconcile/merge/dedup → embed → relationship links, fire-and-forget after each turn (matching `runTurn` voice capture path).
+7. **Runtime clock** — `resolveUserTimezoneCached` + `buildClockForZone` injected into the system prompt each turn, matching the web.
+8. **Unchanged renderer** — `useVoice.ts` and any text chat UI send the same `ChatSendRequest`. The only IPC addition is `inputModality?: "voice" | "text"` on that type, which defaults to `"text"` when omitted.
 
 ---
 
 ## Architecture
 
-### Three-process model — what changes and what stays
+### What changes vs. what stays
 
 | Layer | Change |
 |-------|--------|
-| Renderer (`src/`) | None — `useVoice.ts` sends the same `ChatSendRequest{requestId, messages:[{user,transcript}]}` |
-| `electron/chat.ts` | `streamChat` delegates to `chat-turn.ts`; `buildAnthropicMessages` kept for tests |
-| `electron/chat-turn.ts` | **New** — full turn orchestrator (history + retrieval + stream + capture) |
-| `electron/conversation.ts` | **New** — find-or-create the perpetual conversation; persist user/assistant messages |
-| `electron/memory/` | **New** — ported subset of `lib/memory/` adapted to use the Electron Supabase client |
-| `electron/sync.ts` | Drive-by bugfix: `type` → `memory_type` column name |
+| `shared/types.ts` | Add `inputModality?: "voice" \| "text"` to `ChatSendRequest` |
+| `src/hooks/useVoice.ts` | Pass `inputModality: "voice"` in `chatSend` call (one line) |
+| `electron/chat.ts` | `streamChat` becomes a shim; delegates to `chat-turn.ts` |
+| `electron/chat-turn.ts` | **New** — full turn orchestrator matching web `runTurn` / `runTurnStream` |
+| `electron/conversation.ts` | **New** — perpetual conversation find-or-create + message persistence |
+| `electron/tools/` | **New** — port of `lib/tools/definitions.ts` + `lib/tools/handlers.ts` (minus `plan_workflow`; plus `electron/tools/web-search.ts`, `electron/tools/webpage.ts`) |
+| `electron/memory/` | **New** — port of `lib/memory/` + `lib/chat/context-intent.ts`, `model-routing.ts`, `runtime-context.ts`, and fragments of `system-prompt.ts` |
+| `electron/sync.ts` | Drive-by bugfix: `type` → `memory_type` column + `MemorySummary` type rename |
 
-### New file tree
+### New directory layout
 
 ```
 electron/
-  chat.ts                  # unchanged public API; internal body delegates to chat-turn
-  chat-turn.ts             # NEW: orchestrates every turn
-  conversation.ts          # NEW: perpetual conversation + message persistence
+  chat.ts                         # unchanged public API; shim → chat-turn
+  chat-turn.ts                    # NEW: full turn orchestrator
+  conversation.ts                 # NEW: perpetual conversation + message persistence
+  tools/
+    definitions.ts                # PORT: TOOL_DEFINITIONS (all tools except plan_workflow)
+    handlers.ts                   # PORT: executeTool dispatcher + all handlers
+    web-search.ts                 # PORT: googleWebSearch (or Brave) raw fetch
+    webpage.ts                    # PORT: fetchWebpage raw fetch
   memory/
-    index.ts               # re-exports: preRetrieveContext, autoCaptureFromMessage, saveMemory
-    client.ts              # getUserId() — cached wrapper around getSupabase().auth.getUser()
-    search.ts              # PORT: hybridSearch, preRetrieveContext (memories + reminders)
-    save.ts                # PORT: saveMemory with full classify/reconcile/merge/dedup/embed
-    extract.ts             # PORT: autoCaptureFromMessage (pattern-based, no LLM call)
-    classify.ts            # PORT: classifyMemory (raw fetch → Anthropic, unchanged)
-    embed.ts               # PORT: embedText (raw fetch → OpenAI, unchanged)
-    reconcile.ts           # PORT: pickReplacementCandidate, findRelatedMemoryIds (pure)
-    merge.ts               # PORT: mergeMemoryContent (pure)
-    keywords.ts            # PORT: extractSearchTerms, expandSearchTerms, etc. (pure)
-    profile.ts             # PORT: CORE_PROFILE_PATTERNS, pickCoreProfileMemories (pure)
-    lifestyle-capture.ts   # PORT: extractLifestyleFacts, extractExplicitMemoryContent (pure)
-    relationships.ts       # PORT: detectAndLinkRelationships (Supabase + Anthropic)
-    runtime-context.ts     # PORT: resolveUserTimezoneCached, buildClockForZone, formatRuntimeClockForPrompt
+    index.ts                      # re-exports for chat-turn consumption
+    client.ts                     # getUserId() — cached getSupabase().auth.getUser()
+    search.ts                     # PORT: hybridSearch, retrieveMemoriesForTurn, preRetrieveContext
+    save.ts                       # PORT: saveMemory, updateMemory
+    extract.ts                    # PORT: autoCaptureFromMessage
+    classify.ts                   # PORT: classifyMemory (raw Anthropic fetch)
+    embed.ts                      # PORT: embedText (raw OpenAI fetch)
+    reconcile.ts                  # PORT: pickReplacementCandidate, findRelatedMemoryIds
+    merge.ts                      # PORT: mergeMemoryContent
+    keywords.ts                   # PORT: extractSearchTerms, expandSearchTerms, etc.
+    profile.ts                    # PORT: CORE_PROFILE_PATTERNS, pickCoreProfileMemories
+    lifestyle-capture.ts          # PORT: extractLifestyleFacts, extractExplicitMemoryContent
+    relationships.ts              # PORT: detectAndLinkRelationships
+    runtime-context.ts            # PORT: resolveUserTimezoneCached, buildClockForZone, formatRuntimeClockForPrompt
+    context-intent.ts             # PORT: inferContextIntent, ContextIntent type
+    retrieval-plan.ts             # PORT: RetrievalPlan type, resolveRetrievalPlan, applyVoiceRetrievalOverrides
+    model-routing.ts              # PORT: inferComplexity
 ```
 
-**Single porting rule:** every `createServerClient()` call becomes `getSupabase()` (from `../supabase`). `classify.ts` and `embed.ts` use raw `fetch` with no Supabase — they port unchanged except for import path adjustments. `@/` path aliases become relative imports throughout.
+**Single porting rule:** every `createServerClient()` → `getSupabase()`. `@/` path aliases → relative imports. `classify.ts`, `embed.ts`, `web-search.ts`, `webpage.ts` use raw `fetch` — they port with no Supabase changes. Pure logic files (`reconcile.ts`, `merge.ts`, `keywords.ts`, `profile.ts`, `lifestyle-capture.ts`, `model-routing.ts`, `context-intent.ts`) need only path alias adjustments.
+
+---
+
+## IPC Change — `ChatSendRequest`
+
+```typescript
+// shared/types.ts
+export interface ChatSendRequest {
+  requestId: string;
+  messages: ChatMessage[];
+  inputModality?: "voice" | "text";  // NEW — defaults to "text" when absent
+}
+```
+
+`useVoice.ts` adds `inputModality: "voice"` to its existing `chatSend` call — one line change, no structural impact.
 
 ---
 
@@ -68,137 +95,97 @@ electron/
 
 ### One perpetual conversation
 
-The main process owns conversation identity. On first turn after sign-in it queries Supabase for an existing `conversations` row with `title = "Nova (Mac)"` belonging to the current user. If found, it caches the `id` in memory for the session's lifetime. If not found, it inserts a new row and caches the id.
-
-This "find-or-create on first turn" pattern means no extra work on app launch — it resolves lazily. If the user signs out and back in, a new find-or-create resolves the correct conversation for the new user.
-
-```typescript
-// electron/conversation.ts (conceptual)
-
-let cachedConversationId: string | null = null;
-
-export async function getOrCreateConversation(userId: string): Promise<string> {
-  if (cachedConversationId) return cachedConversationId;
-  const supabase = getSupabase();
-  const { data } = await supabase
-    .from("conversations")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("title", "Nova (Mac)")
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (data) {
-    cachedConversationId = data.id;
-    return data.id;
-  }
-  const { data: created, error } = await supabase
-    .from("conversations")
-    .insert({ user_id: userId, title: "Nova (Mac)" })
-    .select("id")
-    .single();
-  if (error) throw error;
-  cachedConversationId = created.id;
-  return created.id;
-}
-
-export function resetConversationCache(): void {
-  cachedConversationId = null; // call on sign-out
-}
-```
+The main process owns conversation identity. On first turn, lazily queries Supabase for `conversations` where `user_id = userId AND title = "Nova (Mac)"`, takes the most recent by `created_at`. If none exists, inserts one. Caches the `id` in memory for the session. On sign-out, `resetConversationCache()` clears it.
 
 ### Message persistence
 
 ```
-Before call:  INSERT messages (conversation_id, role="user", content=transcript)
-              UPDATE conversations SET updated_at=now()
-After done:   INSERT messages (conversation_id, role="assistant", content=fullText) [fire-and-forget]
+Before Anthropic call:  INSERT messages(conversation_id, role="user",   content=transcript)
+                        UPDATE conversations SET updated_at=now()
+After ChatDone:         INSERT messages(conversation_id, role="assistant", content=fullText)  [fire-and-forget]
 ```
 
-The assistant message is persisted after `ChatDone` — its `id` is not needed by the renderer, so it can be non-blocking.
+User message is persisted before the call so its `id` can be passed to `autoCaptureFromMessage` as `sourceMessageId`.
 
-### 24-message window
+### History window
 
-`loadLastNMessages(conversationId, 24)` ordered by `created_at DESC` then reversed — retrieves the 24 most-recent messages regardless of age, giving Nova the last ~12 turns of context without bounding on recency. Voice turns are short (≤100 tokens each), so 24 messages is generous within the `max_tokens: 650` voice budget.
+Matches `applyVoiceRetrievalOverrides` behavior from the web:
 
-The turn orchestrator builds the Anthropic messages array from this history, prepends `<relevant_context>` to the latest user message (matching web `buildClaudeMessages`), and passes it to the stream.
+| Modality | `chatHistoryLimit` |
+|----------|--------------------|
+| voice    | 8 (from `applyVoiceRetrievalOverrides`) |
+| text     | 40 (from `MAIN_CEILING`) |
+
+`loadLastNMessages(conversationId, limit)` — ordered `created_at DESC`, reversed — gives the most recent N messages regardless of age.
+
+---
+
+## Dynamic Intent Routing
+
+Port `inferContextIntent` and `resolveRetrievalPlan` directly from the web, plus `applyVoiceRetrievalOverrides` for voice turns.
+
+```
+transcript
+  └─▶ inferContextIntent(transcript, "main")          → intent (e.g. "reminders", "profile_recall")
+  └─▶ resolveRetrievalPlan("main", intent)            → full plan (mirrors web MAIN_CEILING)
+  └─▶ [voice only] applyVoiceRetrievalOverrides(plan) → voice-trimmed plan
+                                                         (memoryLimit≤4, queryMatchPool≤8,
+                                                          chatHistoryLimit=8, reminderLimit≤4)
+```
+
+For `context-intent.ts` the `isGmailContextIntent` import becomes a port of that function (it's a simple keyword check in `lib/google/gmail.ts`); `isWorkoutRecallRelated` is already in `keywords.ts` which we're porting.
+
+The ported `retrieval-plan.ts` defines a local `RetrievalPlan` interface that strips unused fields (`youtubeTaste`, `calendarLimit`, `gmailHighlightLimit`, `workoutLimit`) — those fields still exist in the type but will always be 0/false from the plan functions until Google OAuth is wired. This keeps the interface stable for the future without dead code driving bugs.
+
+---
+
+## Dynamic Model Routing
+
+Port `inferComplexity` unchanged from `lib/chat/model-routing.ts`.
+
+| Modality | Routing |
+|----------|---------|
+| voice    | always light (Haiku) — matching web `isVoiceTurn → complexity: "light"` |
+| text     | `inferComplexity(transcript)` → light (Haiku) or heavy (Sonnet) |
+
+Model env vars: `ANTHROPIC_MODEL_LIGHT` (default `claude-haiku-4-5`) and `ANTHROPIC_MODEL_HEAVY` (default `claude-sonnet-4-6`) — same env var names as the web app, so `.env.local` works for both.
 
 ---
 
 ## Memory Retrieval
 
-### Fixed voice retrieval plan
-
-Rather than the web's per-thread plan machinery, the Mac uses a single constant plan tuned for voice:
-
-A local `RetrievalPlan` interface is defined in `electron/memory/search.ts` (not imported from the web app — the web type carries Google fields the Mac doesn't use). The voice plan is a constant:
-
-```typescript
-const VOICE_RETRIEVAL_PLAN: RetrievalPlan = {
-  memoryLimit: 20,               // matches web main-thread retrieval quality;
-  queryMatchPool: 20,            // max_tokens:650 caps the reply, not the input
-  recentMemoryFallback: 0,       // voice relies on core profile + query match
-  coreProfileMode: "minimal",    // name, location, job — top facts only
-  reminderLimit: 3,              // up to 3 upcoming pending reminders
-  chatHistoryLimit: 24,
-  intent: "general",
-  contextNote: "nova-mac voice turn",
-};
-```
-
-`memoryLimit: 20` gives Nova up to 20 ranked memories — matching web main-thread retrieval quality. The constraint on voice is the spoken reply (`max_tokens: 650`), not input context; Haiku's 200K context window means 20 memories (~400 input tokens) is trivially small. `coreProfileMode: "minimal"` always includes the user's core profile facts (name/location/job) via `pickMinimalCoreProfileMemories`. These land first; query-matched memories fill the remaining budget, deduped via `dedupeResults`.
-
-### Retrieval pipeline
-
-Runs in parallel, with a 1200 ms voice deadline on the combined memory+reminder fetch:
+Matches web `preRetrieveContext` behaviour exactly, limited to the data sources currently wired on Mac:
 
 ```
-getUserId()  ──────────────────────────────────────────────────────▶ userId
-                                                                          │
-getOrCreateConversation(userId)                                           │
-loadLastNMessages(conversationId, 24)                                     │
-resolveUserTimezoneCached(userId) ──▶ buildClockForZone() ──▶ clock       │
-                                                                          ▼
-Promise.race([                                                    1200ms deadline
-  Promise.all([
-    retrieveMemoriesForTurn(userId, transcript, VOICE_RETRIEVAL_PLAN),
-    listUpcomingReminders(userId, 3),
-  ]).then(format into lines),
-  timeout("")
-])
+retrieveMemoriesForTurn(userId, transcript, plan)    → up to plan.memoryLimit memories
+                                                       (pinned + minimal core profile + hybrid RRF)
+listUpcomingReminders(userId, plan.reminderLimit)    → upcoming pending reminders (if plan.reminderLimit > 0)
+[Google calendar/gmail/youtube/workouts → skipped]   plan values are 0/false until OAuth wired
 ```
 
-If the deadline fires, `relevantContext` is empty string — the call still proceeds with history but no injected context.
+Everything runs in `Promise.all` with a 1200ms `Promise.race` deadline (matching `VOICE_CONTEXT_TIMEOUT_MS`). If the deadline fires, `relevantContext` is empty string — the turn proceeds with history only. Deadline applies to both voice and text turns (web applies it to voice only, but on Mac where Supabase is remote the budget is the same).
 
 ### Context block format
 
-Matches the web app's format exactly so shared tooling/prompts stay consistent:
+Matches web exactly (same XML tags, same `formatMemoryLine`, same `formatReminderLine`):
 
 ```
-<relevant_context thread="main" intent="general" note="nova-mac voice turn">
+<relevant_context thread="main" intent="reminders" note="...">
 - [memory id=abc (fact)] User's name is Aryav
-- [memory id=def (routine)] Goes to the gym Monday, Wednesday, Friday
 - [reminder] Review project proposal — due Wednesday 2 Jul
 </relevant_context>
 ```
 
-This block is prepended to the latest user message in the Anthropic messages array (not injected into the system prompt), matching `buildClaudeMessages` behavior from the web.
+Prepended to the latest user message in the Anthropic messages array — not injected into the system prompt.
 
 ---
 
 ## System Prompt
 
-The Mac voice system prompt gains awareness of memory context. The runtime clock is appended to the system prompt as a `<runtime_context>` block (not cached — changes every call, but the system prompt body above it is stable).
+Port `STATIC_VOICE_SYSTEM_PROMPT` and `STATIC_SYSTEM_PROMPT` from `lib/chat/system-prompt.ts` with a single Mac-specific addition: omit references to "Google Calendar tab", "Reminders tab", "Connections page" (UI elements not present on Mac). The runtime clock block is appended each turn.
 
 ```
-You are Nova, a concise, friendly voice assistant on the user's Mac.
-Replies are spoken aloud — keep them short and natural, usually 1–3 sentences.
-
-Memory and context:
-- Pre-fetched context in <relevant_context> may include memories and pending reminders.
-  Use them naturally to give personalized, time-aware replies.
-- Do not mention databases, memory systems, or that you are checking separate systems.
-- Do not repeat back facts the user just told you unless confirming something important.
+[STATIC_VOICE_SYSTEM_PROMPT or STATIC_SYSTEM_PROMPT, mac-trimmed]
 
 <runtime_context>
 - Now: {localDate}, {localTime} ({timezone})
@@ -206,34 +193,69 @@ Memory and context:
 </runtime_context>
 ```
 
-The runtime clock resolves via `resolveUserTimezoneCached` (queries `memories` for timezone hints, cached 10 min) then `buildClockForZone`. Both functions are ported from `lib/chat/runtime-context.ts` into `electron/memory/` since they query the memories table.
+`buildDynamicSystemAdditions` (personality + thread context + intent) is ported for the text path. For voice, the static voice prompt already handles brevity — personality hints are skipped (matching web `isVoiceTurn` path which also skips most dynamic additions).
+
+---
+
+## Tool-Call Loop
+
+Port `TOOL_DEFINITIONS` (all tools minus `plan_workflow`) and `executeTool` into `electron/tools/`.
+
+```
+MAX_TOOL_ITERATIONS_VOICE = 3
+MAX_TOOL_ITERATIONS_TEXT  = 10
+```
+
+**Google tools** (`list_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `search_gmail`, `get_gmail_message`, `create_gmail_draft`, `get_youtube_taste_profile`, `search_youtube`, `recommend_youtube`): included in the tool definitions and dispatcher. When no Google OAuth is configured, each handler returns `{ error: "Google Calendar/Gmail/YouTube is not connected." }` — the same graceful degradation as the web when a user hasn't linked an account. Claude surfaces a natural explanation in its reply.
+
+**`plan_workflow`**: excluded from Mac tool definitions. The web creates a workflow run that renders an approval UI in the browser — no Mac equivalent exists yet.
+
+**`web_search` / `fetch_webpage`**: port raw fetch implementations directly. These depend only on env vars (`BRAVE_SEARCH_API_KEY` or equivalent) with no Supabase or Google OAuth.
+
+Tool results feed back into the Anthropic message loop identically to the web:
+
+```typescript
+// Within the tool loop in chat-turn.ts
+while (response.stop_reason === "tool_use" && iterations < maxToolIterations) {
+  const toolUseBlocks = ...;
+  messages.push({ role: "assistant", content: response.content });
+  const toolResults = await Promise.all(
+    toolUseBlocks.map(async (block) => ({
+      type: "tool_result",
+      tool_use_id: block.id,
+      content: JSON.stringify(await executeTool(block.name, block.input, context)),
+    }))
+  );
+  messages.push({ role: "user", content: toolResults });
+  response = await nextStream(...);
+  iterations++;
+}
+```
+
+`cancelChat` aborts the `AbortController` which signals the current stream; any in-flight tool calls complete before the next iteration but the abort check precedes the next Anthropic call.
 
 ---
 
 ## Memory Writes — Full Pipeline Parity
 
-After every turn, `autoCaptureFromMessage(userId, transcript, userMessageId)` runs **fire-and-forget** (does not block the IPC response). It mirrors the web `run-turn.ts` voice capture path exactly.
-
-### Capture → save chain
+After `ChatDone`, fire-and-forget `autoCaptureFromMessage(userId, transcript, userMsgId)`:
 
 ```
-autoCaptureFromMessage(transcript)
-  ├── PROFILE_PATTERNS regex → saveMemory (high confidence, no LLM needed)
+autoCaptureFromMessage
+  ├── PROFILE_PATTERNS regex → saveMemory
   ├── EXTENDED_PATTERNS regex → saveMemory
-  ├── extractExplicitMemoryContent ("remember that...") → saveMemory
-  └── extractLifestyleFacts → saveMemory (up to MAX_CAPTURES_PER_MESSAGE total)
+  ├── extractExplicitMemoryContent → saveMemory
+  └── extractLifestyleFacts → saveMemory   (budget-capped per message)
 
-saveMemory(userId, content, options)
-  ├── classifyMemory(content)        ← raw Anthropic fetch (works in main process as-is)
-  ├── findReconciliationCandidates() ← hybrid search to find potential duplicates
-  ├── pickReplacementCandidate()     ← pure logic
-  ├── mergeMemoryContent()           ← pure logic
-  ├── INSERT or UPDATE memories      ← Supabase (getSupabase() client)
-  ├── scheduleEmbedding()            ← raw OpenAI fetch, fire-and-forget
-  └── detectAndLinkRelationships()   ← Supabase + Anthropic, fire-and-forget
+saveMemory
+  ├── classifyMemory          (raw Anthropic fetch)
+  ├── findReconciliationCandidates + pickReplacementCandidate + mergeMemoryContent
+  ├── INSERT or UPDATE memories
+  ├── scheduleEmbedding       (raw OpenAI fetch, fire-and-forget)
+  └── detectAndLinkRelationships (Supabase + Anthropic, fire-and-forget)
 ```
 
-**No new LLM calls per turn are blocking** — classify runs inside `saveMemory` which is already fire-and-forget. Embedding and relationship-link detection are fire-and-forget within `saveMemory` itself.
+No blocking LLM calls in the post-turn path — classify is inside `saveMemory` which is itself fire-and-forget.
 
 ---
 
@@ -241,62 +263,71 @@ saveMemory(userId, content, options)
 
 ```typescript
 export async function streamTurn(
-  transcript: string,
-  requestId: string,
+  req: ChatSendRequest,
   emit: (channel: IpcChannel, payload: unknown) => void,
 ): Promise<void> {
+  const isVoice = req.inputModality === "voice";
+  const transcript = req.messages.at(-1)?.content ?? "";
   const controller = new AbortController();
-  inFlight.set(requestId, controller);
+  inFlight.set(req.requestId, controller);
 
   try {
-    const userId = await getUserId();       // cached after first call
+    const userId = await getUserId();
     const conversationId = await getOrCreateConversation(userId);
-
-    // Persist user message (blocking — needed before we load history)
     const userMsg = await persistUserMessage(conversationId, transcript);
 
-    // Load history + retrieval in parallel, retrieval with deadline
+    const intent = inferContextIntent(transcript, "main");
+    let plan = resolveRetrievalPlan("main", intent);
+    if (isVoice) plan = applyVoiceRetrievalOverrides(plan);
+
+    const complexity = isVoice ? "light" : inferComplexity(transcript);
+    const model = complexity === "heavy" ? HEAVY_MODEL : LIGHT_MODEL;
+
     const [history, relevantContext, clock] = await Promise.all([
-      loadLastNMessages(conversationId, 24),
-      retrieveWithDeadline(userId, transcript, 1200),
+      loadLastNMessages(conversationId, plan.chatHistoryLimit),
+      retrieveWithDeadline(userId, transcript, plan, 1200),
       resolveClockForUser(userId),
     ]);
 
-    const systemPrompt = buildVoiceSystemPrompt(clock);
+    const system = buildMacSystemPrompt(isVoice, clock);
     const messages = buildMessages(history, relevantContext);
+    const maxIterations = isVoice ? MAX_TOOL_ITERATIONS_VOICE : MAX_TOOL_ITERATIONS_TEXT;
+    const context = { userId, conversationId, sourceMessageId: userMsg.id, userMessage: transcript };
 
-    // Anthropic stream (same shape as before)
     let fullText = "";
-    const stream = client().messages.stream(
-      { model: VOICE_MODEL, max_tokens: 650, system: systemPrompt, messages },
-      { signal: controller.signal },
-    );
-    stream.on("text", (delta) => {
-      fullText += delta;
-      emit(IpcChannel.ChatDelta, { requestId, delta });
-    });
-    await stream.finalMessage();
+    let response;
+    let iterations = 0;
 
-    emit(IpcChannel.ChatDone, { requestId, text: fullText });
+    while (true) {
+      response = await streamOnce(model, system, messages, controller.signal,
+        (delta) => { fullText += delta; emit(IpcChannel.ChatDelta, { requestId: req.requestId, delta }); }
+      );
+      if (response.stop_reason !== "tool_use" || iterations >= maxIterations) break;
+      const toolResults = await runToolLoop(response, messages, context);
+      messages.push({ role: "user", content: toolResults });
+      iterations++;
+    }
 
-    // Fire-and-forget post-turn work
-    void persistAssistantMessage(conversationId, fullText);
-    void autoCaptureFromMessage(userId, transcript, userMsg.id).catch(
-      (err) => console.error("[memory] capture failed:", err),
-    );
+    emit(IpcChannel.ChatDone, { requestId: req.requestId, text: fullText });
+
+    void persistAssistantMessage(conversationId, fullText)
+      .catch((e) => console.error("[turn] persist assistant msg:", e));
+    void autoCaptureFromMessage(userId, transcript, userMsg.id)
+      .catch((e) => console.error("[memory] capture:", e));
+
   } catch (err) {
     if (controller.signal.aborted) return;
     emit(IpcChannel.ChatError, {
-      requestId,
+      requestId: req.requestId,
       message: err instanceof Error ? err.message : "Chat failed",
     });
   } finally {
-    inFlight.delete(requestId);
+    inFlight.delete(req.requestId);
   }
 }
 ```
 
-`streamChat` in `chat.ts` becomes a thin shim: extract `transcript = req.messages.at(-1)?.content ?? ""` and call `streamTurn(transcript, req.requestId, emit)`.
+`streamChat` in `chat.ts` becomes: `return streamTurn(req, emit)`.
 
 ---
 
@@ -304,53 +335,48 @@ export async function streamTurn(
 
 | Failure | Behaviour |
 |---------|-----------|
-| Supabase unreachable on first turn | `getOrCreateConversation` throws → `ChatError` emitted. Auth is a precondition; if Supabase is unreachable the turn cannot proceed. |
-| `loadLastNMessages` fails | Throws → `ChatError`. History is required for a coherent turn. |
-| Retrieval deadline fires (1200 ms) | Empty `relevantContext` — call proceeds with history only. Logged at info level. |
-| `persistUserMessage` fails | Throws → `ChatError`. Message must be persisted before the call so the assistant reply can reference it via `source_message_id`. |
-| `persistAssistantMessage` fails | Fire-and-forget — logged, turn already succeeded. |
-| `autoCaptureFromMessage` fails | Fire-and-forget — caught, logged, turn already succeeded. |
-| `embedText` / `detectAndLinkRelationships` fail | Internal to `saveMemory`, already fire-and-forget with error logging. |
-| Sign-out | `resetConversationCache()` is called so the next user gets a fresh find-or-create. |
+| `getUserId()` fails (not signed in) | `ChatError` — turn cannot proceed without identity |
+| `getOrCreateConversation` fails | `ChatError` — history requires a conversation |
+| `persistUserMessage` fails | `ChatError` — `sourceMessageId` is required for memory capture |
+| `loadLastNMessages` fails | `ChatError` — history is load-bearing |
+| Retrieval deadline (1200ms) | Empty `relevantContext`, turn proceeds with history only; info log |
+| Tool handler throws | Returns `{ error: message }` to Claude — Claude surfaces gracefully in reply |
+| Google tool called without OAuth | Returns `{ error: "Google X is not connected." }` |
+| `persistAssistantMessage` fails | Fire-and-forget — logged, turn already succeeded |
+| `autoCaptureFromMessage` fails | Fire-and-forget — logged, turn already succeeded |
+| Sign-out | `resetConversationCache()` — next user gets fresh find-or-create |
 
 ---
 
 ## Drive-by Fix
 
-`electron/sync.ts` line 18 selects `"id, content, type, salience"` from `memories`. The actual column is `memory_type`, not `type`. This returns `null` for every memory in the UI. Fix in the same commit as conversation.ts.
-
-```typescript
-// Before
-.select("id, content, type, salience")
-
-// After
-.select("id, content, memory_type, salience")
-```
-
-The `MemorySummary` type in `shared/types.ts` uses `type: string` — rename that field to `memoryType: string | null` to match reality, and update `listMemories` and any renderer consumers.
+`electron/sync.ts` selects `"id, content, type, salience"` from `memories`. The column is `memory_type`. Fix to `"id, content, memory_type, salience"`. Update `MemorySummary` in `shared/types.ts` (`type: string` → `memoryType: string | null`) and any renderer consumers.
 
 ---
 
 ## Testing
 
-All tests are Vitest unit tests in Node environment (`.test.ts` colocated with the file under test or in a dedicated `__tests__/` sibling). Network calls (Anthropic API, OpenAI API, Supabase) are stubbed via `vi.mock` or manual spies.
+Vitest unit tests, Node environment, all network calls stubbed.
 
 | Test file | What it covers |
 |-----------|---------------|
-| `electron/conversation.test.ts` | find-or-create: returns existing id; creates new on miss; caches across calls; resets on sign-out |
-| `electron/chat.test.ts` | `buildAnthropicMessages` role coalescing, empty-content filtering (already partly exists) |
-| `electron/memory/search.test.ts` | RRF merge & ranking: keyword-only, vector-only, combined; salience boost; type weights; dedup |
-| `electron/memory/reconcile.test.ts` | `pickReplacementCandidate` duplicate/subject-key/subset detection; `findRelatedMemoryIds` |
-| `electron/memory/merge.test.ts` | `mergeMemoryContent` idempotence, additive merge, full replacement |
+| `electron/conversation.test.ts` | find-or-create: existing → returns id; miss → creates; cached; reset on sign-out |
+| `electron/chat.test.ts` | `buildAnthropicMessages` coalescing; `streamTurn` delegates correctly |
+| `electron/memory/context-intent.test.ts` | `inferContextIntent` all intent branches |
+| `electron/memory/retrieval-plan.test.ts` | `resolveRetrievalPlan` per intent; `applyVoiceRetrievalOverrides` caps |
+| `electron/memory/model-routing.test.ts` | `inferComplexity` heavy patterns; length threshold |
+| `electron/memory/search.test.ts` | RRF merge & ranking; salience boost; type weights; dedup; deadline race |
+| `electron/memory/reconcile.test.ts` | `pickReplacementCandidate` duplicate/subject-key/subset; `findRelatedMemoryIds` |
+| `electron/memory/merge.test.ts` | `mergeMemoryContent` idempotence, additive, replacement |
 | `electron/memory/classify.test.ts` | Pattern-match paths (no network); LLM path stubbed |
-| `electron/memory/extract.test.ts` | `autoCaptureFromMessage`: profile patterns, explicit capture, lifestyle facts, budget cap |
+| `electron/memory/extract.test.ts` | `autoCaptureFromMessage`: profile patterns, explicit, lifestyle facts, budget |
+| `electron/tools/handlers.test.ts` | `executeTool` for non-Google tools; Google tools return "not connected" |
 
 ---
 
 ## What This Does Not Include
 
-- **Tool-call loop** (save_memory, create_reminder as Claude tools): deferred. Nova can read and surface memories but cannot be directed to save or modify them mid-turn via tool use.
-- **Dynamic model routing**: Haiku (voice model) is fixed. Complexity-based Haiku/Sonnet routing is a separate improvement.
-- **Google integrations** (Calendar, Gmail, YouTube, Workouts): no OAuth wired on Mac. Deferred.
-- **Relationship-link read surface**: links are written but not read back into retrieval context (matching current web behaviour — links are stored but retrieval uses RRF scores, not the link graph).
-- **`MemorySummary` update in renderer**: the `sync.ts` fix updates the field name; any renderer code displaying memory type must be updated accordingly (likely one line in `components/shell/ThreadSidebar.tsx` or similar).
+- **`plan_workflow` tool**: requires an approval UI that doesn't exist on Mac.
+- **Google OAuth**: Calendar, Gmail, YouTube tools are wired and will respond gracefully when not connected. Actual OAuth flow is a separate plan.
+- **Prompt caching**: web uses `cache_control: ephemeral` on system prompt + tools. Mac can add this later; it's an optimisation, not a feature gap.
+- **`buildDynamicSystemAdditions` for voice**: web skips personality hints on voice turns — Mac matches this.
