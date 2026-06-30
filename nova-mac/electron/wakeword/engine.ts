@@ -19,6 +19,7 @@ import {
 // 1280-sample chunk yields exactly 8 frames that align continuously (verified to
 // match the full-buffer mel to within float32 noise).
 const MEL_CONTEXT_SAMPLES = 480; // 3 hops of STFT warmup
+const EMBEDDING_HOP = 8; // mel frames between embeddings (openWakeWord window=76, step=8)
 
 export class WakeWordEngine {
   private mel!: ort.InferenceSession;
@@ -29,6 +30,8 @@ export class WakeWordEngine {
   private embWindow = new WindowAccumulator(EMBEDDINGS_PER_PREDICTION, 96);
   /** Trailing samples of the previous chunk, prepended as STFT context (zeros at startup). */
   private melContext = new Float32Array(MEL_CONTEXT_SAMPLES);
+  /** Counts full-window mel frames so we emit one embedding every EMBEDDING_HOP frames. */
+  private embStep = 0;
   private loggedFirstFrame = false;
 
   constructor(private readonly modelsDir: string) {}
@@ -77,6 +80,13 @@ export class WakeWordEngine {
       const row = new Float32Array(melData.buffer, melData.byteOffset + f * MEL_BINS * 4, MEL_BINS);
       const melWin = this.melWindow.push(row);
       if (!melWin) continue;
+
+      // openWakeWord computes embeddings with window=76, step=8 — i.e. ONE embedding
+      // per 80 ms chunk (8 mel frames), not one per frame. Emitting one per frame would
+      // make the 16-embedding wake window span only ~160 ms of stride instead of the
+      // ~1.3 s the wake model was trained on, so the phrase pattern never appears and
+      // scores stay pinned near zero. Gate the embedding to every EMBEDDING_HOP frames.
+      if (this.embStep++ % EMBEDDING_HOP !== 0) continue;
 
       // 2) 76×32 mel window → 96-d embedding
       const embIn = new ort.Tensor("float32", melWin, [1, MEL_FRAMES_PER_EMBEDDING, MEL_BINS, 1]);
