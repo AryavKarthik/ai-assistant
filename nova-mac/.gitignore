@@ -4,3 +4,4 @@ dist/
 .env
 build/*.node
 electron/native-probe/build/
+electron/wakeword/models/*.onnx

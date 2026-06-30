@@ -22,6 +22,16 @@ export function registerChatBridge(bridge: ChatBridge): void {
   ipcMain.on(IpcChannel.ChatCancel, (_e, requestId: string) => bridge.cancel(requestId));
 }
 
+export interface WakeBridge {
+  pushFrame(buf: ArrayBuffer): void;
+  setEnabled(on: boolean): void;
+}
+
+export function registerWakeBridge(bridge: WakeBridge): void {
+  ipcMain.on(IpcChannel.WakeAudioFrame, (_e, buf: ArrayBuffer) => bridge.pushFrame(buf));
+  ipcMain.on(IpcChannel.WakeSetEnabled, (_e, on: boolean) => bridge.setEnabled(on));
+}
+
 export function registerIpcHandlers(handlers: IpcHandlers): void {
   ipcMain.handle(IpcChannel.Ping, () => handlers.ping());
   ipcMain.handle(IpcChannel.AuthStatus, () => handlers.authStatus());

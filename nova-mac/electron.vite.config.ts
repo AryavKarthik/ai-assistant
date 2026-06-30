@@ -5,7 +5,16 @@ const sharedAlias = { "@shared": new URL("./shared", import.meta.url).pathname }
 
 export default defineConfig({
   main: {
-    build: { outDir: "out/main", lib: { entry: "electron/main.ts" } },
+    build: {
+      outDir: "out/main",
+      // Two entries: main process + wake-word worker thread (needs its own file)
+      lib: {
+        entry: {
+          main: "electron/main.ts",
+          worker: "electron/wakeword/worker.ts",
+        },
+      },
+    },
     resolve: { alias: sharedAlias },
   },
   preload: {

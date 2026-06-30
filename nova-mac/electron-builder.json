@@ -4,6 +4,7 @@
   "protocols": [{ "name": "Nova", "schemes": ["nova"] }],
   "asarUnpack": ["**/*.node"],
   "files": ["out/**", "build/**", "package.json"],
+  "extraResources": [{ "from": "electron/wakeword/models", "to": "wakeword-models" }],
   "mac": {
     "category": "public.app-category.productivity",
     "target": ["dmg"],

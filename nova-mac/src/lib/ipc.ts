@@ -20,6 +20,9 @@ export interface NovaBridge {
   onChatDelta(cb: (p: import("@shared/types").ChatStreamDelta) => void): () => void;
   onChatDone(cb: (p: import("@shared/types").ChatStreamDone) => void): () => void;
   onChatError(cb: (p: import("@shared/types").ChatStreamError) => void): () => void;
+  sendWakeFrame(buf: ArrayBuffer): void;
+  setWakeEnabled(on: boolean): void;
+  onWakeDetected(cb: () => void): () => void;
 }
 
 declare global {

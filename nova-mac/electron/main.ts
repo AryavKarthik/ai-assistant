@@ -5,12 +5,15 @@ import { config as loadEnv } from "dotenv";
 // .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
 loadEnv({ path: [".env.local", ".env"] });
 
-import { app, BrowserWindow, globalShortcut } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
+import { join } from "node:path";
 import { createOrbWindow } from "./window";
 import { createTray } from "./tray";
-import { registerIpcHandlers, registerChatBridge } from "./ipc";
+import { registerIpcHandlers, registerChatBridge, registerWakeBridge } from "./ipc";
 import { streamChat, cancelChat } from "./chat";
 import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
+import { WakeWordController } from "./wakeword/index";
+import { IpcChannel } from "@shared/types";
 
 let win: BrowserWindow | null = null;
 // Hold a reference so the tray is not garbage-collected.
@@ -41,6 +44,23 @@ app.whenReady().then(async () => {
       void streamChat(req, (channel, payload) => sender.send(channel, payload)),
     cancel: cancelChat,
   });
+
+  // Wake-word controller: resolve models dir for dev vs packaged builds
+  const modelsDir = app.isPackaged
+    ? join(process.resourcesPath, "wakeword-models")
+    : join(app.getAppPath(), "electron", "wakeword", "models");
+  const wake = new WakeWordController(modelsDir);
+  wake.start(() => {
+    wake.pauseForTurn(); // stop ingesting frames during the voice turn
+    for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IpcChannel.WakeDetected);
+  });
+  registerWakeBridge({
+    pushFrame: (buf) => wake.pushFrame(buf),
+    setEnabled: (on) => wake.setEnabled(on),
+  });
+  // Resume wake detection once the voice turn completes (Task 12 sends this)
+  ipcMain.on(IpcChannel.VoiceTurnEnded, () => wake.resume());
+
   try {
     const { probeNative } = await import("./native-probe/index.js");
     console.log("[nova] native probe:", probeNative());

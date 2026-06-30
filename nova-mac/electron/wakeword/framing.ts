@@ -1,5 +1,7 @@
 // openWakeWord streaming dimensions (the melspectrogram/embedding/wakeword ONNX pipeline).
-export const SAMPLES_PER_FRAME = 1280;        // 80 ms @ 16 kHz
+// SAMPLES_PER_FRAME lives in shared/wake-constants so the renderer can import it
+// without pulling in any main-process code.
+export { SAMPLES_PER_FRAME } from "@shared/wake-constants";
 export const MEL_BINS = 32;                    // melspectrogram output bins
 export const MEL_FRAMES_PER_EMBEDDING = 76;    // embedding model input frames
 export const EMBEDDINGS_PER_PREDICTION = 16;   // wakeword model input embeddings
