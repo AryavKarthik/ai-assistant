@@ -26,6 +26,9 @@ export function createOrbWindow(): BrowserWindow {
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);
+    // Dev only: surface the window + console so renderer errors are visible.
+    win.webContents.openDevTools({ mode: "detach" });
+    win.once("ready-to-show", () => win.show());
   } else {
     win.loadFile(join(import.meta.dirname, "../renderer/index.html"));
   }

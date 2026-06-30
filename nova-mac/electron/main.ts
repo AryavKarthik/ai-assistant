@@ -1,3 +1,10 @@
+import { config as loadEnv } from "dotenv";
+// Load env into the main process BEFORE anything reads process.env (e.g. Supabase,
+// Anthropic, OpenAI). electron-vite does not populate process.env for the main
+// process the way Next.js auto-loads .env.local — we must do it explicitly.
+// .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
+loadEnv({ path: [".env.local", ".env"] });
+
 import { app, BrowserWindow, globalShortcut } from "electron";
 import { createOrbWindow } from "./window";
 import { createTray } from "./tray";
