@@ -9,6 +9,17 @@ import {
   EMBEDDINGS_PER_PREDICTION,
 } from "./framing";
 
+// The melspectrogram model uses a 640-sample (40 ms) STFT window with a 160-sample
+// (10 ms) hop, so it produces frames(N) = N/160 - 3 frames and consumes the first
+// 3 hops (480 samples) as warmup. Feeding isolated 1280-sample chunks therefore
+// yields only 5 frames each (instead of the 8 a continuous stream produces) AND
+// distorts the timing — the 76-frame embedding window ends up spanning the wrong
+// duration and the wake phrase never matches the trained pattern. To stream
+// correctly we prepend the previous chunk's trailing 480 samples as context so each
+// 1280-sample chunk yields exactly 8 frames that align continuously (verified to
+// match the full-buffer mel to within float32 noise).
+const MEL_CONTEXT_SAMPLES = 480; // 3 hops of STFT warmup
+
 export class WakeWordEngine {
   private mel!: ort.InferenceSession;
   private embed!: ort.InferenceSession;
@@ -16,6 +27,8 @@ export class WakeWordEngine {
   private ring = new AudioRingBuffer();
   private melWindow = new WindowAccumulator(MEL_FRAMES_PER_EMBEDDING, MEL_BINS);
   private embWindow = new WindowAccumulator(EMBEDDINGS_PER_PREDICTION, 96);
+  /** Trailing samples of the previous chunk, prepended as STFT context (zeros at startup). */
+  private melContext = new Float32Array(MEL_CONTEXT_SAMPLES);
   private loggedFirstFrame = false;
 
   constructor(private readonly modelsDir: string) {}
@@ -32,8 +45,15 @@ export class WakeWordEngine {
     const samples = this.ring.take(SAMPLES_PER_FRAME);
     if (!samples) return null;
 
+    // Prepend the previous chunk's trailing 480 samples so the STFT has warmup
+    // context and this 1280-sample chunk yields exactly 8 continuously-aligned frames.
+    const melInput = new Float32Array(MEL_CONTEXT_SAMPLES + samples.length);
+    melInput.set(this.melContext, 0);
+    melInput.set(samples, MEL_CONTEXT_SAMPLES);
+    this.melContext = samples.slice(samples.length - MEL_CONTEXT_SAMPLES);
+
     // 1) raw audio → mel frames (shape [1, N] → [1, melFrames, MEL_BINS])
-    const melIn = new ort.Tensor("float32", samples, [1, samples.length]);
+    const melIn = new ort.Tensor("float32", melInput, [1, melInput.length]);
     const melOut = await this.mel.run({ [this.mel.inputNames[0]!]: melIn });
     const melTensor = melOut[this.mel.outputNames[0]!]!;
     // Apply openWakeWord normalization: matches Python `spec = (spec / 10) + 2`
