@@ -135,8 +135,8 @@ A local `RetrievalPlan` interface is defined in `electron/memory/search.ts` (not
 
 ```typescript
 const VOICE_RETRIEVAL_PLAN: RetrievalPlan = {
-  memoryLimit: 6,
-  queryMatchPool: 10,
+  memoryLimit: 20,               // matches web main-thread retrieval quality;
+  queryMatchPool: 20,            // max_tokens:650 caps the reply, not the input
   recentMemoryFallback: 0,       // voice relies on core profile + query match
   coreProfileMode: "minimal",    // name, location, job — top facts only
   reminderLimit: 3,              // up to 3 upcoming pending reminders
@@ -146,7 +146,7 @@ const VOICE_RETRIEVAL_PLAN: RetrievalPlan = {
 };
 ```
 
-`memoryLimit: 6` gives Nova the 6 most relevant memories. `coreProfileMode: "minimal"` always includes up to ~4 core profile facts (name/location/job) via `pickMinimalCoreProfileMemories`. These core facts are included first and then query-matched memories fill the remaining budget, deduped via the existing `dedupeResults`.
+`memoryLimit: 20` gives Nova up to 20 ranked memories — matching web main-thread retrieval quality. The constraint on voice is the spoken reply (`max_tokens: 650`), not input context; Haiku's 200K context window means 20 memories (~400 input tokens) is trivially small. `coreProfileMode: "minimal"` always includes the user's core profile facts (name/location/job) via `pickMinimalCoreProfileMemories`. These land first; query-matched memories fill the remaining budget, deduped via `dedupeResults`.
 
 ### Retrieval pipeline
 
