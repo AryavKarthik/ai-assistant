@@ -117,6 +117,7 @@ export function useVoice(): { state: OrbState; level: number } {
         stream = await mic.current.acquire();
       } catch {
         dispatch({ type: "dismiss" });
+        endTurn();
         return;
       }
       if (cancelled) {
