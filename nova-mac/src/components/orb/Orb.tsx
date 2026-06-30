@@ -4,15 +4,16 @@ import { appleSpring } from "../../motion/springs";
 import { Waveform } from "./Waveform";
 import { ShimmerRing } from "./ShimmerRing";
 import { WorkingChip } from "./WorkingChip";
+import { ResponseCard } from "../cards/ResponseCard";
 
 const SIZE: Record<OrbState["name"], number> = {
   dormant: 12, listening: 120, processing: 120, responding: 120, working: 0,
 };
 
 export function Orb({
-  state, level, onSummon, onStop,
+  state, level, onSummon, onStop, onExpand,
 }: {
-  state: OrbState; level: number; onSummon: () => void; onStop: () => void;
+  state: OrbState; level: number; onSummon: () => void; onStop: () => void; onExpand: () => void;
 }) {
   if (state.name === "working") {
     return (
@@ -52,16 +53,7 @@ export function Orb({
 
       <AnimatePresence>
         {state.name === "responding" && state.responseText && (
-          <motion.div
-            className="nova-glass nova-card"
-            initial={{ opacity: 0, y: 8, filter: "blur(6px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, filter: "blur(6px)" }}
-            transition={appleSpring}
-            style={{ marginTop: 12, padding: "12px 16px", maxWidth: 320, fontSize: 14 }}
-          >
-            {state.responseText.slice(0, 200)}
-          </motion.div>
+          <ResponseCard text={state.responseText} onExpand={onExpand} />
         )}
       </AnimatePresence>
     </div>

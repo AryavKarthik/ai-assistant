@@ -3,10 +3,12 @@ import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { useOrb } from "./hooks/useOrb";
 import { Orb } from "./components/orb/Orb";
+import { ChatSheet } from "./components/sheet/ChatSheet";
 
 function OrbHarness({ email }: { email: string | null }) {
   const { state, dispatch } = useOrb();
   const [level, setLevel] = useState(0);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // DEV ONLY: drive states from the keyboard until voice (Task 12) is wired.
   useEffect(() => {
@@ -17,7 +19,7 @@ function OrbHarness({ email }: { email: string | null }) {
         dispatch({ type: "responseDelta", delta: "This is a demo response from Nova." }); }
       if (e.key === "4") dispatch({ type: "responseEnd" });
       if (e.key === "5") dispatch({ type: "startWorking", step: "Opening Finder" });
-      if (e.key === "Escape") dispatch({ type: "dismiss" });
+      if (e.key === "Escape") { dispatch({ type: "dismiss" }); setSheetOpen(false); }
     };
     window.addEventListener("keydown", onKey);
     const t = setInterval(() => setLevel(Math.random() * 0.6), 120);
@@ -34,6 +36,15 @@ function OrbHarness({ email }: { email: string | null }) {
         level={level}
         onSummon={() => dispatch({ type: "summon" })}
         onStop={() => dispatch({ type: "stop" })}
+        onExpand={() => setSheetOpen(true)}
+      />
+      <ChatSheet
+        open={sheetOpen}
+        messages={[
+          { role: "user", content: "demo command" },
+          { role: "assistant", content: "This is a demo response from Nova." },
+        ]}
+        onClose={() => setSheetOpen(false)}
       />
     </>
   );
