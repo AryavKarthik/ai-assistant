@@ -19,6 +19,7 @@ export function createOrbWindow(): BrowserWindow {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      backgroundThrottling: false,
     },
   });
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
