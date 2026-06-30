@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 
 const rows = {
   conversations: [{ id: "c1", title: "Hi", updated_at: "2026-06-01T00:00:00Z" }],
-  memories: [{ id: "m1", content: "User likes tea", type: "preference", salience: 0.8 }],
+  memories: [{ id: "m1", content: "User likes tea", memory_type: "preference", salience: 0.8 }],
 };
 
 vi.mock("./supabase", () => ({
@@ -26,6 +26,6 @@ describe("sync", () => {
   });
   it("maps memory rows to summaries", async () => {
     const out = await listMemories();
-    expect(out[0]).toEqual({ id: "m1", content: "User likes tea", type: "preference", salience: 0.8 });
+    expect(out[0]).toEqual({ id: "m1", content: "User likes tea", memoryType: "preference", salience: 0.8 });
   });
 });

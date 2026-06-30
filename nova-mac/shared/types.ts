@@ -37,7 +37,7 @@ export interface ConversationSummary {
 export interface MemorySummary {
   id: string;
   content: string;
-  type: string;
+  memoryType: string | null;
   salience: number;
 }
 
@@ -62,6 +62,7 @@ export interface ChatMessage {
 export interface ChatSendRequest {
   requestId: string;
   messages: ChatMessage[];
+  inputModality?: "voice" | "text";
 }
 
 export interface ChatStreamDelta {

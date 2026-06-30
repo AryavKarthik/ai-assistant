@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { IpcChannel, DEFAULT_VOICE_PREFERENCES } from "./types";
+import { IpcChannel, DEFAULT_VOICE_PREFERENCES, ChatSendRequest, MemorySummary } from "./types";
 
 describe("IpcChannel", () => {
   it("defines the foundation channels", () => {
@@ -34,5 +34,46 @@ describe("DEFAULT_VOICE_PREFERENCES", () => {
     expect(DEFAULT_VOICE_PREFERENCES.ttsProvider).toBe("openai");
     expect(DEFAULT_VOICE_PREFERENCES.silenceMs).toBe(1500);
     expect(DEFAULT_VOICE_PREFERENCES.bargeInEnabled).toBe(true);
+  });
+});
+
+describe("ChatSendRequest", () => {
+  it("supports optional inputModality field", () => {
+    const req: ChatSendRequest = {
+      requestId: "req-123",
+      messages: [{ role: "user", content: "hello" }],
+      inputModality: "voice",
+    };
+    expect(req.inputModality).toBe("voice");
+  });
+
+  it("allows inputModality to be undefined", () => {
+    const req: ChatSendRequest = {
+      requestId: "req-123",
+      messages: [{ role: "user", content: "hello" }],
+    };
+    expect(req.inputModality).toBeUndefined();
+  });
+});
+
+describe("MemorySummary", () => {
+  it("uses memoryType field", () => {
+    const summary: MemorySummary = {
+      id: "mem-1",
+      content: "User prefers tea",
+      memoryType: "preference",
+      salience: 0.8,
+    };
+    expect(summary.memoryType).toBe("preference");
+  });
+
+  it("allows memoryType to be null", () => {
+    const summary: MemorySummary = {
+      id: "mem-1",
+      content: "Some content",
+      memoryType: null,
+      salience: 0.5,
+    };
+    expect(summary.memoryType).toBeNull();
   });
 });
