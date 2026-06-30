@@ -6,6 +6,7 @@ export type MemoryType =
   | "goal" | "relationship" | "skill";
 export type MemorySourceType = "auto_capture" | "tool_save" | "user_manual";
 export type LinkType = "related" | "contradicts" | "refines" | "context_of" | "part_of";
+export type ModelComplexity = "light" | "medium" | "heavy";
 
 export interface Memory {
   id: string;
@@ -24,6 +25,19 @@ export interface Memory {
   confidence: number;
   metadata: Record<string, unknown> | null;
   source_message_id: string | null;
+  created_at: string;
+}
+
+export interface MemorySearchResult {
+  id: string;
+  content: string;
+  category: string | null;
+  memory_type: MemoryType | null;
+  salience: number;
+  is_pinned: boolean;
+  is_archived?: boolean;
+  confidence?: number;
+  valid_from: string | null;
   created_at: string;
 }
 
