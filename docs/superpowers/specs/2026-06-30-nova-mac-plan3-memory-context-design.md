@@ -15,7 +15,7 @@
 ## Goals
 
 1. Nova retains **conversation history** within and across app launches (last 24 messages ≈ 12 turns).
-2. Nova **retrieves relevant memories and upcoming reminders** before each turn and injects them into the system prompt.
+2. Nova **retrieves relevant memories and upcoming reminders** before each turn and injects them into the conversation turn (prepended to the latest user message, not the system prompt).
 3. Nova **persists new facts** after each turn using the full classify → reconcile/merge/dedup → embed → relationship-link pipeline, keeping the shared Supabase store consistent with the web app.
 4. The existing `ChatDelta` / `ChatDone` / `ChatError` IPC shape is **unchanged** — `useVoice.ts` in the renderer requires zero modification.
 5. API keys stay in the main process. The renderer is unaware of `userId`, `conversationId`, or any memory state.
@@ -57,6 +57,7 @@ electron/
     profile.ts             # PORT: CORE_PROFILE_PATTERNS, pickCoreProfileMemories (pure)
     lifestyle-capture.ts   # PORT: extractLifestyleFacts, extractExplicitMemoryContent (pure)
     relationships.ts       # PORT: detectAndLinkRelationships (Supabase + Anthropic)
+    runtime-context.ts     # PORT: resolveUserTimezoneCached, buildClockForZone, formatRuntimeClockForPrompt
 ```
 
 **Single porting rule:** every `createServerClient()` call becomes `getSupabase()` (from `../supabase`). `classify.ts` and `embed.ts` use raw `fetch` with no Supabase — they port unchanged except for import path adjustments. `@/` path aliases become relative imports throughout.
@@ -130,22 +131,19 @@ The turn orchestrator builds the Anthropic messages array from this history, pre
 
 Rather than the web's per-thread plan machinery, the Mac uses a single constant plan tuned for voice:
 
+A local `RetrievalPlan` interface is defined in `electron/memory/search.ts` (not imported from the web app — the web type carries Google fields the Mac doesn't use). The voice plan is a constant:
+
 ```typescript
-const VOICE_RETRIEVAL_PLAN = {
+const VOICE_RETRIEVAL_PLAN: RetrievalPlan = {
   memoryLimit: 6,
   queryMatchPool: 10,
   recentMemoryFallback: 0,       // voice relies on core profile + query match
   coreProfileMode: "minimal",    // name, location, job — top facts only
   reminderLimit: 3,              // up to 3 upcoming pending reminders
-  calendarLimit: 0,              // not yet wired
-  gmailHighlightLimit: 0,        // not yet wired
-  workoutLimit: 0,               // not yet wired
-  youtubeTaste: false,           // not yet wired
   chatHistoryLimit: 24,
   intent: "general",
-  threadSection: "main",
   contextNote: "nova-mac voice turn",
-} satisfies ContextRetrievalPlan;
+};
 ```
 
 `memoryLimit: 6` gives Nova the 6 most relevant memories. `coreProfileMode: "minimal"` always includes up to ~4 core profile facts (name/location/job) via `pickMinimalCoreProfileMemories`. These core facts are included first and then query-matched memories fill the remaining budget, deduped via the existing `dedupeResults`.
