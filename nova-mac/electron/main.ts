@@ -25,6 +25,7 @@ app.whenReady().then(async () => {
     authSignOut: signOut,
     syncConversations: () => import("./sync").then((m) => m.listConversations()),
     syncMemories: () => import("./sync").then((m) => m.listMemories()),
+    transcribe: (req, provider) => import("./voice/stt").then((m) => m.transcribe(req, provider)),
   });
   try {
     const { probeNative } = await import("./native-probe/index.js");

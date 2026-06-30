@@ -17,6 +17,7 @@ describe("registerIpcHandlers", () => {
       authSignOut: async () => {},
       syncConversations: async () => [],
       syncMemories: async () => [],
+      transcribe: async () => "",
     });
     expect(ipcMain.handle).toHaveBeenCalledWith(IpcChannel.Ping, expect.any(Function));
   });

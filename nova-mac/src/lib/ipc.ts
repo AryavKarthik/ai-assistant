@@ -8,6 +8,10 @@ export interface NovaBridge {
   onAuthChanged(cb: (s: AuthState) => void): () => void;
   syncConversations(): Promise<import("@shared/types").ConversationSummary[]>;
   syncMemories(): Promise<import("@shared/types").MemorySummary[]>;
+  transcribe(
+    req: import("@shared/types").TranscribeRequest,
+    provider: import("@shared/types").SttProvider,
+  ): Promise<string>;
 }
 
 declare global {
