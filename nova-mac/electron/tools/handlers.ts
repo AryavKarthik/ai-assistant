@@ -13,6 +13,18 @@ import { resolveReminderDueAt } from "./parse-due-at";
 import { googleWebSearch } from "./web-search";
 import { fetchWebpage } from "./webpage";
 import type { MemoryCategory } from "../memory/types";
+import {
+  listCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+} from "../google/calendar";
+import { searchGmail, getGmailMessage, createGmailDraft } from "../google/gmail";
+import { getCachedTasteProfile, searchYoutube, recommendYoutube } from "../google/youtube";
+import {
+  YOUTUBE_MISSING_SCOPE_ERROR,
+  isInsufficientScopeError,
+} from "../google/errors";
 
 export interface ToolContext {
   userId: string;
@@ -53,18 +65,25 @@ export async function executeTool(
         case "delete_reminder":
           return handleDeleteReminder(input, context);
         case "list_calendar_events":
+          return handleListCalendarEvents(input, context);
         case "create_calendar_event":
+          return handleCreateCalendarEvent(input, context);
         case "update_calendar_event":
+          return handleUpdateCalendarEvent(input, context);
         case "delete_calendar_event":
-          return { error: "Google Calendar is not yet connected on Mac." };
+          return handleDeleteCalendarEvent(input, context);
         case "search_gmail":
+          return handleSearchGmail(input, context);
         case "get_gmail_message":
+          return handleGetGmailMessage(input, context);
         case "create_gmail_draft":
-          return { error: "Gmail is not yet connected on Mac." };
+          return handleCreateGmailDraft(input, context);
         case "get_youtube_taste_profile":
+          return handleGetYoutubeTasteProfile(input, context);
         case "search_youtube":
+          return handleSearchYoutube(input, context);
         case "recommend_youtube":
-          return { error: "YouTube is not yet connected on Mac." };
+          return handleRecommendYoutube(input, context);
         case "web_search":
           return handleWebSearch(input);
         case "fetch_webpage":
@@ -328,5 +347,180 @@ async function handleFetchWebpage(
     return { error: "url is required" };
   }
   const result = await fetchWebpage(inp.url.trim());
+  return result as Record<string, unknown>;
+}
+
+// ─── Google Calendar ──────────────────────────────────────────────────────────
+
+async function handleListCalendarEvents(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { time_min, time_max, max_results } = input as {
+    time_min?: string;
+    time_max?: string;
+    max_results?: number;
+  };
+  const result = await listCalendarEvents(context.userId, {
+    timeMin: time_min,
+    timeMax: time_max,
+    maxResults: max_results,
+  });
+  return result as Record<string, unknown>;
+}
+
+async function handleCreateCalendarEvent(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const fields = input as {
+    summary?: string;
+    start?: string;
+    end?: string;
+    description?: string;
+    location?: string;
+    attendees?: string[];
+  };
+  if (!fields.summary?.trim()) return { error: "summary is required" };
+  if (!fields.start?.trim()) return { error: "start is required" };
+  if (!fields.end?.trim()) return { error: "end is required" };
+  const result = await createCalendarEvent(context.userId, {
+    summary: fields.summary.trim(),
+    start: fields.start.trim(),
+    end: fields.end.trim(),
+    description: fields.description,
+    location: fields.location,
+    attendees: fields.attendees,
+  });
+  return result as Record<string, unknown>;
+}
+
+async function handleUpdateCalendarEvent(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const fields = input as {
+    event_id?: string;
+    summary?: string;
+    start?: string;
+    end?: string;
+    description?: string;
+    location?: string;
+  };
+  if (!fields.event_id?.trim()) return { error: "event_id is required" };
+  const result = await updateCalendarEvent(context.userId, {
+    event_id: fields.event_id.trim(),
+    summary: fields.summary,
+    start: fields.start,
+    end: fields.end,
+    description: fields.description,
+    location: fields.location,
+  });
+  return result as Record<string, unknown>;
+}
+
+async function handleDeleteCalendarEvent(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { event_id } = input as { event_id?: string };
+  if (!event_id?.trim()) return { error: "event_id is required" };
+  const result = await deleteCalendarEvent(context.userId, event_id.trim());
+  return result as Record<string, unknown>;
+}
+
+// ─── Gmail ────────────────────────────────────────────────────────────────────
+
+async function handleSearchGmail(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { query, max_results } = input as {
+    query?: string;
+    max_results?: number;
+  };
+  if (!query?.trim()) return { error: "query is required" };
+  const result = await searchGmail(context.userId, query.trim(), max_results);
+  return result as Record<string, unknown>;
+}
+
+async function handleGetGmailMessage(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { message_id } = input as { message_id?: string };
+  if (!message_id?.trim()) return { error: "message_id is required" };
+  const result = await getGmailMessage(context.userId, message_id.trim());
+  return result as Record<string, unknown>;
+}
+
+async function handleCreateGmailDraft(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const fields = input as {
+    to?: string;
+    subject?: string;
+    body?: string;
+    cc?: string;
+    bcc?: string;
+    reply_to_message_id?: string;
+  };
+  if (!fields.to?.trim()) return { error: "to is required" };
+  if (!fields.body?.trim()) return { error: "body is required" };
+  const result = await createGmailDraft(context.userId, {
+    to: fields.to.trim(),
+    subject: fields.subject ?? "",
+    body: fields.body.trim(),
+    cc: fields.cc,
+    bcc: fields.bcc,
+    reply_to_message_id: fields.reply_to_message_id,
+  });
+  return result as Record<string, unknown>;
+}
+
+// ─── YouTube ──────────────────────────────────────────────────────────────────
+
+async function handleGetYoutubeTasteProfile(
+  _input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const profile = await getCachedTasteProfile(context.userId, {
+    refreshIfStale: true,
+  });
+  if (!profile) {
+    return {
+      error: isInsufficientScopeError(YOUTUBE_MISSING_SCOPE_ERROR)
+        ? YOUTUBE_MISSING_SCOPE_ERROR
+        : "YouTube not linked. Connect at /connections.",
+    };
+  }
+  return { profile };
+}
+
+async function handleSearchYoutube(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { query, max_results, duration } = input as {
+    query?: string;
+    max_results?: number;
+    duration?: "short" | "medium" | "long";
+  };
+  if (!query?.trim()) return { error: "query is required" };
+  const result = await searchYoutube(context.userId, query.trim(), {
+    maxResults: max_results,
+    duration,
+  });
+  return result as Record<string, unknown>;
+}
+
+async function handleRecommendYoutube(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { topic } = input as { topic?: string };
+  if (!topic?.trim()) return { error: "topic is required" };
+  const result = await recommendYoutube(context.userId, topic.trim());
   return result as Record<string, unknown>;
 }

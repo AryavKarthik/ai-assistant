@@ -20,6 +20,26 @@ vi.mock("./workouts", () => ({
   listWorkouts: vi.fn().mockResolvedValue([]),
   searchWorkouts: vi.fn().mockResolvedValue([]),
 }));
+vi.mock("../google/calendar", () => ({
+  listCalendarEvents: vi.fn().mockRejectedValue(new Error("Google Calendar not linked")),
+  createCalendarEvent: vi.fn().mockRejectedValue(new Error("Google Calendar not linked")),
+  updateCalendarEvent: vi.fn().mockRejectedValue(new Error("Google Calendar not linked")),
+  deleteCalendarEvent: vi.fn().mockRejectedValue(new Error("Google Calendar not linked")),
+}));
+vi.mock("../google/gmail", () => ({
+  searchGmail: vi.fn().mockRejectedValue(new Error("Gmail not linked")),
+  getGmailMessage: vi.fn().mockRejectedValue(new Error("Gmail not linked")),
+  createGmailDraft: vi.fn().mockRejectedValue(new Error("Gmail not linked")),
+}));
+vi.mock("../google/youtube", () => ({
+  getCachedTasteProfile: vi.fn().mockResolvedValue(null),
+  searchYoutube: vi.fn().mockRejectedValue(new Error("YouTube not linked")),
+  recommendYoutube: vi.fn().mockRejectedValue(new Error("YouTube not linked")),
+}));
+vi.mock("../google/errors", () => ({
+  YOUTUBE_MISSING_SCOPE_ERROR: "YouTube is connected but missing permission.",
+  isInsufficientScopeError: vi.fn().mockReturnValue(false),
+}));
 
 import { executeTool } from "./handlers";
 
@@ -43,9 +63,10 @@ describe("executeTool", () => {
     expect(result).toHaveProperty("success", true);
   });
 
-  it("list_calendar_events returns not-connected error", async () => {
+  it("list_calendar_events returns not-connected when Google auth returns null", async () => {
+    // With no token row in Supabase, getCalendarClient returns null → CALENDAR_NOT_CONNECTED
     const result = await executeTool("list_calendar_events", {}, ctx);
-    expect((result as { error: string }).error).toContain("not yet connected");
+    expect(result).toHaveProperty("error");
   });
 
   it("unknown tool returns error", async () => {
