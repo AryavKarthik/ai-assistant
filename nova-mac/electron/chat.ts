@@ -63,6 +63,7 @@ export async function streamChat(
     await stream.finalMessage();
     emit(IpcChannel.ChatDone, { requestId: req.requestId, text });
   } catch (err) {
+    if (controller.signal.aborted) return; // cancelled intentionally — do not emit error
     emit(IpcChannel.ChatError, {
       requestId: req.requestId,
       message: err instanceof Error ? err.message : "Chat failed",

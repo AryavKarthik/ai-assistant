@@ -40,4 +40,6 @@ contextBridge.exposeInMainWorld("nova", {
     ipcRenderer.on(IpcChannel.WakeDetected, h);
     return () => ipcRenderer.removeListener(IpcChannel.WakeDetected, h);
   },
+  getVoicePreferences: () => ipcRenderer.invoke(IpcChannel.VoiceGetPreferences),
+  voiceTurnEnded: () => ipcRenderer.send(IpcChannel.VoiceTurnEnded),
 });

@@ -19,6 +19,7 @@ describe("registerIpcHandlers", () => {
       syncMemories: async () => [],
       transcribe: async () => "",
       synthesize: async () => ({ audioBase64: "" }),
+      getVoicePreferences: async () => (await import("@shared/types")).DEFAULT_VOICE_PREFERENCES,
     });
     expect(ipcMain.handle).toHaveBeenCalledWith(IpcChannel.Ping, expect.any(Function));
   });

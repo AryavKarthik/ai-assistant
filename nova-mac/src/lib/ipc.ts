@@ -23,6 +23,8 @@ export interface NovaBridge {
   sendWakeFrame(buf: ArrayBuffer): void;
   setWakeEnabled(on: boolean): void;
   onWakeDetected(cb: () => void): () => void;
+  getVoicePreferences(): Promise<import("@shared/types").VoicePreferences>;
+  voiceTurnEnded(): void;
 }
 
 declare global {

@@ -38,6 +38,7 @@ app.whenReady().then(async () => {
     syncMemories: () => import("./sync").then((m) => m.listMemories()),
     transcribe: (req, provider) => import("./voice/stt").then((m) => m.transcribe(req, provider)),
     synthesize: (req) => import("./voice/tts").then((m) => m.synthesize(req)),
+    getVoicePreferences: () => import("./voice/preferences").then((m) => m.getVoicePreferences()),
   });
   registerChatBridge({
     start: (req, sender) =>
