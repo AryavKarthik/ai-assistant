@@ -12,15 +12,15 @@ describe("constants", () => {
 });
 
 describe("AudioRingBuffer", () => {
-  it("normalizes Int16 to Float32 [-1,1] and yields exactly the requested window", () => {
+  it("keeps Int16 at raw int16 scale (openWakeWord melspectrogram expects this) and yields exactly the requested window", () => {
     const ring = new AudioRingBuffer();
-    const frame = new Int16Array(SAMPLES_PER_FRAME).fill(16384); // 0.5 of full scale
+    const frame = new Int16Array(SAMPLES_PER_FRAME).fill(16384); // half of full scale
     expect(ring.take(SAMPLES_PER_FRAME)).toBeNull(); // nothing pushed yet
     ring.pushInt16(frame);
     const win = ring.take(SAMPLES_PER_FRAME);
     expect(win).not.toBeNull();
     expect(win!.length).toBe(SAMPLES_PER_FRAME);
-    expect(win![0]).toBeCloseTo(0.5, 2);
+    expect(win![0]).toBe(16384); // raw int16 magnitude, NOT normalized to [-1, 1]
   });
 });
 

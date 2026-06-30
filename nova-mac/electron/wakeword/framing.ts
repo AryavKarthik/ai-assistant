@@ -6,12 +6,18 @@ export const MEL_BINS = 32;                    // melspectrogram output bins
 export const MEL_FRAMES_PER_EMBEDDING = 76;    // embedding model input frames
 export const EMBEDDINGS_PER_PREDICTION = 16;   // wakeword model input embeddings
 
-/** Accumulates Int16 frames; hands out Float32 windows normalized to [-1, 1]. */
+/**
+ * Accumulates Int16 frames; hands out Float32 windows at the *raw int16 scale*
+ * (≈[-32768, 32767]). openWakeWord's melspectrogram.onnx is trained on int16
+ * sample magnitudes cast straight to float32 — NOT normalized to [-1, 1].
+ * Normalizing here collapses the mel energy to the silence floor (-100 dB) and
+ * the wake model never fires.
+ */
 export class AudioRingBuffer {
   private buf: number[] = [];
 
   pushInt16(frame: Int16Array): void {
-    for (let i = 0; i < frame.length; i++) this.buf.push(frame[i]! / 32768);
+    for (let i = 0; i < frame.length; i++) this.buf.push(frame[i]!);
   }
 
   /** Returns the oldest `n` samples and consumes them, or null if not enough buffered. */
