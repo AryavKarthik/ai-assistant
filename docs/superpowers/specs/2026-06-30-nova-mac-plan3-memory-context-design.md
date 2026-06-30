@@ -113,7 +113,7 @@ Matches `applyVoiceRetrievalOverrides` behavior from the web:
 
 | Modality | `chatHistoryLimit` |
 |----------|--------------------|
-| voice    | 8 (from `applyVoiceRetrievalOverrides`) |
+| voice    | 8 (from `applyMacVoiceOverrides`) |
 | text     | 40 (from `MAIN_CEILING`) |
 
 `loadLastNMessages(conversationId, limit)` — ordered `created_at DESC`, reversed — gives the most recent N messages regardless of age.
@@ -126,16 +126,33 @@ Port `inferContextIntent` and `resolveRetrievalPlan` directly from the web, plus
 
 ```
 transcript
-  └─▶ inferContextIntent(transcript, "main")          → intent (e.g. "reminders", "profile_recall")
-  └─▶ resolveRetrievalPlan("main", intent)            → full plan (mirrors web MAIN_CEILING)
-  └─▶ [voice only] applyVoiceRetrievalOverrides(plan) → voice-trimmed plan
-                                                         (memoryLimit≤4, queryMatchPool≤8,
-                                                          chatHistoryLimit=8, reminderLimit≤4)
+  └─▶ inferContextIntent(transcript, "main")       → intent (e.g. "reminders", "profile_recall")
+  └─▶ resolveRetrievalPlan("main", intent)         → full plan (mirrors web MAIN_CEILING)
+  └─▶ [voice only] applyMacVoiceOverrides(plan)   → voice-trimmed plan
+                                                      (memoryLimit≤12, queryMatchPool≤16,
+                                                       chatHistoryLimit=8, reminderLimit≤4)
 ```
 
 For `context-intent.ts` the `isGmailContextIntent` import becomes a port of that function (it's a simple keyword check in `lib/google/gmail.ts`); `isWorkoutRecallRelated` is already in `keywords.ts` which we're porting.
 
 The ported `retrieval-plan.ts` defines a local `RetrievalPlan` interface that strips unused fields (`youtubeTaste`, `calendarLimit`, `gmailHighlightLimit`, `workoutLimit`) — those fields still exist in the type but will always be 0/false from the plan functions until Google OAuth is wired. This keeps the interface stable for the future without dead code driving bugs.
+
+### Mac voice memory override
+
+The web's `applyVoiceRetrievalOverrides` caps `memoryLimit` at 4. The Mac raises this to 12 — voice turns benefit from more memory context since the model sees everything but speaks concisely. All other voice caps from `applyVoiceRetrievalOverrides` are preserved:
+
+```typescript
+// electron/memory/retrieval-plan.ts
+export function applyMacVoiceOverrides(plan: RetrievalPlan): RetrievalPlan {
+  return {
+    ...applyVoiceRetrievalOverrides(plan),   // apply web overrides first
+    memoryLimit: Math.min(plan.memoryLimit, 12),   // raise cap: 4 → 12
+    queryMatchPool: Math.min(plan.queryMatchPool, 16), // pool to match
+  };
+}
+```
+
+Voice turns call `applyMacVoiceOverrides` instead of `applyVoiceRetrievalOverrides` directly. The effective range is the intent-driven plan value (which can be as low as 4 for `temporal`) up to 12.
 
 ---
 
@@ -206,7 +223,7 @@ MAX_TOOL_ITERATIONS_VOICE = 3
 MAX_TOOL_ITERATIONS_TEXT  = 10
 ```
 
-**Google tools** (`list_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `search_gmail`, `get_gmail_message`, `create_gmail_draft`, `get_youtube_taste_profile`, `search_youtube`, `recommend_youtube`): included in the tool definitions and dispatcher. When no Google OAuth is configured, each handler returns `{ error: "Google Calendar/Gmail/YouTube is not connected." }` — the same graceful degradation as the web when a user hasn't linked an account. Claude surfaces a natural explanation in its reply.
+**Google tools** (`list_calendar_events`, `create_calendar_event`, `update_calendar_event`, `delete_calendar_event`, `search_gmail`, `get_gmail_message`, `create_gmail_draft`, `get_youtube_taste_profile`, `search_youtube`, `recommend_youtube`): included in full. The Mac shares the same Supabase backend as the web app, so Google OAuth tokens stored in `google_oauth_tokens` by the web app's `/connections` flow are immediately available to the Mac via `getSupabase()`. If the user has already connected Google on the web, all Google tools work on Mac at zero additional cost. If not connected, handlers return `{ error: "Google X is not connected." }` — same graceful degradation as the web.
 
 **`plan_workflow`**: excluded from Mac tool definitions. The web creates a workflow run that renders an approval UI in the browser — no Mac equivalent exists yet.
 
