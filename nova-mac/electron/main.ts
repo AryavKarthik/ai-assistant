@@ -33,6 +33,7 @@ app.whenReady().then(async () => {
     syncConversations: () => import("./sync").then((m) => m.listConversations()),
     syncMemories: () => import("./sync").then((m) => m.listMemories()),
     transcribe: (req, provider) => import("./voice/stt").then((m) => m.transcribe(req, provider)),
+    synthesize: (req) => import("./voice/tts").then((m) => m.synthesize(req)),
   });
   try {
     const { probeNative } = await import("./native-probe/index.js");

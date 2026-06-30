@@ -9,6 +9,7 @@ export interface IpcHandlers {
   syncConversations(): Promise<ConversationSummary[]>;
   syncMemories(): Promise<MemorySummary[]>;
   transcribe(req: import("@shared/types").TranscribeRequest, provider: import("@shared/types").SttProvider): Promise<string>;
+  synthesize(req: import("@shared/types").SynthesizeRequest): Promise<import("@shared/types").SynthesizeResult>;
 }
 
 export function registerIpcHandlers(handlers: IpcHandlers): void {
@@ -19,4 +20,5 @@ export function registerIpcHandlers(handlers: IpcHandlers): void {
   ipcMain.handle(IpcChannel.SyncConversations, () => handlers.syncConversations());
   ipcMain.handle(IpcChannel.SyncMemories, () => handlers.syncMemories());
   ipcMain.handle(IpcChannel.VoiceTranscribe, (_e, req, provider) => handlers.transcribe(req, provider));
+  ipcMain.handle(IpcChannel.VoiceSynthesize, (_e, req) => handlers.synthesize(req));
 }

@@ -15,4 +15,5 @@ contextBridge.exposeInMainWorld("nova", {
   syncMemories: () => ipcRenderer.invoke(IpcChannel.SyncMemories),
   transcribe: (req: unknown, provider: unknown) =>
     ipcRenderer.invoke(IpcChannel.VoiceTranscribe, req, provider),
+  synthesize: (req: unknown) => ipcRenderer.invoke(IpcChannel.VoiceSynthesize, req),
 });

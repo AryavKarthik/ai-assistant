@@ -18,6 +18,7 @@ describe("registerIpcHandlers", () => {
       syncConversations: async () => [],
       syncMemories: async () => [],
       transcribe: async () => "",
+      synthesize: async () => ({ audioBase64: "" }),
     });
     expect(ipcMain.handle).toHaveBeenCalledWith(IpcChannel.Ping, expect.any(Function));
   });
