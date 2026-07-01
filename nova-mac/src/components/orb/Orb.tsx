@@ -1,61 +1,97 @@
-import { motion, AnimatePresence } from "framer-motion";
 import type { OrbState } from "../../orb/orb-machine";
-import { appleSpring } from "../../motion/springs";
-import { Waveform } from "./Waveform";
-import { ShimmerRing } from "./ShimmerRing";
-import { WorkingChip } from "./WorkingChip";
-import { ResponseCard } from "../cards/ResponseCard";
+import type { OrbStateName } from "@shared/types";
+import { VoiceOrb, type VoiceVisualMode } from "./VoiceOrb";
 
-const SIZE: Record<OrbState["name"], number> = {
-  dormant: 12, listening: 120, processing: 120, responding: 120, working: 0, bargeIn: 120,
-};
-
-export function Orb({
-  state, level, onSummon, onStop, onExpand,
-}: {
-  state: OrbState; level: number; onSummon: () => void; onStop: () => void; onExpand: () => void;
-}) {
-  if (state.name === "working") {
-    return (
-      <div style={{ position: "fixed", right: 24, bottom: 24 }}>
-        <WorkingChip step={state.workingStep} onStop={onStop} />
-      </div>
-    );
+function toVisualMode(name: OrbStateName): VoiceVisualMode {
+  switch (name) {
+    case "listening": return "listening";
+    case "bargeIn": return "barge_in";
+    case "processing": return "processing";
+    case "responding": return "speaking";
+    case "working": return "thinking";
+    default: return "idle";
   }
+}
 
-  const size = SIZE[state.name];
-  const breathing = state.name === "responding";
+interface OrbProps {
+  state: OrbState;
+  level: number;
+  onSummon?: () => void;
+  onStop?: () => void;
+  onExpand?: () => void;
+}
+
+export function Orb({ state, level, onExpand }: OrbProps) {
+  const visualMode = toVisualMode(state.name);
 
   return (
-    <div style={{ position: "fixed", right: 24, bottom: 24 }}>
-      <motion.div
-        className="nova-glass nova-orb"
-        onClick={state.name === "dormant" ? onSummon : undefined}
-        animate={{
-          width: size, height: size,
-          opacity: state.name === "dormant" ? 0.55 : 1,
-          scale: breathing ? [1, 1.06, 1] : 1,
-        }}
-        transition={
-          breathing
-            ? { scale: { repeat: Infinity, duration: 2.4, ease: "easeInOut" }, ...appleSpring }
-            : appleSpring
-        }
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        padding: "24px 16px",
+        height: "100%",
+        boxSizing: "border-box",
+      }}
+    >
+      {/* Gear button */}
+      <button
+        onClick={onExpand}
         style={{
-          position: "relative", display: "flex",
-          alignItems: "center", justifyContent: "center",
-          cursor: state.name === "dormant" ? "pointer" : "default",
+          position: "absolute",
+          top: 12,
+          right: 12,
+          background: "rgba(255,255,255,0.08)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: 8,
+          color: "rgba(255,255,255,0.6)",
+          cursor: "pointer",
+          fontSize: 16,
+          padding: "4px 8px",
+          lineHeight: 1,
         }}
+        title="Open settings"
       >
-        {state.name === "listening" && <Waveform level={level} />}
-        {state.name === "processing" && <ShimmerRing />}
-      </motion.div>
+        ⚙
+      </button>
 
-      <AnimatePresence>
-        {state.name === "responding" && state.responseText && (
-          <ResponseCard text={state.responseText} onExpand={onExpand} />
-        )}
-      </AnimatePresence>
+      <VoiceOrb visualMode={visualMode} audioLevel={level} />
+
+      {/* Transcript / response text */}
+      {state.transcript && (
+        <div
+          style={{
+            fontSize: 13,
+            color: "rgba(255,255,255,0.55)",
+            textAlign: "center",
+            maxWidth: 340,
+            lineHeight: 1.5,
+          }}
+        >
+          {state.transcript}
+        </div>
+      )}
+      {state.responseText && (
+        <div
+          style={{
+            fontSize: 14,
+            color: "rgba(255,255,255,0.88)",
+            textAlign: "center",
+            maxWidth: 340,
+            lineHeight: 1.6,
+          }}
+        >
+          {state.responseText}
+        </div>
+      )}
+      {state.error && (
+        <div style={{ fontSize: 12, color: "rgba(255,80,80,0.9)", textAlign: "center" }}>
+          {state.error}
+        </div>
+      )}
     </div>
   );
 }
