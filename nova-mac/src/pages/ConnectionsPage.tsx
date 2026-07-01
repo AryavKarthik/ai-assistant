@@ -66,7 +66,7 @@ export function ConnectionsPage() {
       <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 p-3 text-xs text-amber-300">
         <strong>One-time setup required:</strong> Add <code>nova://connections-callback</code> as an
         authorized redirect URI in your Google OAuth app at{" "}
-        <span className="underline cursor-pointer" onClick={() => void nova().connectionsConnect({ service: "" })}>
+        <span className="underline">
           console.cloud.google.com
         </span>
         .

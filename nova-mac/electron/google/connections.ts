@@ -59,7 +59,7 @@ export async function getConnectionsStatus(): Promise<GoogleConnectionStatus> {
 
   const { data } = await supabase
     .from("google_oauth_tokens")
-    .select("service, access_token")
+    .select("service")
     .eq("user_id", userId);
 
   const connected = new Set((data ?? []).map((r) => r.service));
