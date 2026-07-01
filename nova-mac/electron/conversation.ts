@@ -76,7 +76,7 @@ export async function loadLastNMessages(
     .from("messages")
     .select("id, role, content")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
+    .order("created_at", { ascending: true })
     .limit(limit);
 
   if (error) throw error;

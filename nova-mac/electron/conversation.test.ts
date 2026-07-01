@@ -62,8 +62,8 @@ describe("loadLastNMessages", () => {
 
   it("returns messages in chronological order (oldest first)", async () => {
     const rows = [
-      { id: "m2", role: "assistant", content: "Hi there" },
       { id: "m1", role: "user", content: "Hello" },
+      { id: "m2", role: "assistant", content: "Hi there" },
     ];
     const chain = {
       select: vi.fn().mockReturnThis(),
@@ -74,7 +74,7 @@ describe("loadLastNMessages", () => {
     (getSupabase as ReturnType<typeof vi.fn>).mockReturnValue({ from: vi.fn().mockReturnValue(chain) });
 
     const msgs = await loadLastNMessages("conv-1", 10);
-    expect(msgs[0].content).toBe("Hi there");
-    expect(msgs[1].content).toBe("Hello");
+    expect(msgs[0].content).toBe("Hello");
+    expect(msgs[1].content).toBe("Hi there");
   });
 });
