@@ -73,4 +73,11 @@ describe("executeTool", () => {
     const result = await executeTool("nonexistent_tool", {}, ctx);
     expect(result).toHaveProperty("error");
   });
+
+  it("get_youtube_taste_profile returns not-linked error when profile is null", async () => {
+    const result = await executeTool("get_youtube_taste_profile", {}, ctx);
+    expect(result).toEqual({
+      error: "YouTube not linked. Connect via the web app.",
+    });
+  });
 });

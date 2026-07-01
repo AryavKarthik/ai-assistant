@@ -21,10 +21,6 @@ import {
 } from "../google/calendar";
 import { searchGmail, getGmailMessage, createGmailDraft } from "../google/gmail";
 import { getCachedTasteProfile, searchYoutube, recommendYoutube } from "../google/youtube";
-import {
-  YOUTUBE_MISSING_SCOPE_ERROR,
-  isInsufficientScopeError,
-} from "../google/errors";
 
 export interface ToolContext {
   userId: string;
@@ -489,11 +485,7 @@ async function handleGetYoutubeTasteProfile(
     refreshIfStale: true,
   });
   if (!profile) {
-    return {
-      error: isInsufficientScopeError(YOUTUBE_MISSING_SCOPE_ERROR)
-        ? YOUTUBE_MISSING_SCOPE_ERROR
-        : "YouTube not linked. Connect at /connections.",
-    };
+    return { error: "YouTube not linked. Connect via the web app." };
   }
   return { profile };
 }
