@@ -5,8 +5,8 @@ import { DEFAULT_PROACTIVE_PREFS } from "@shared/types";
 
 function proactiveToRow(p: Partial<ProactivePrefs>): Record<string, unknown> {
   const row: Record<string, unknown> = {};
-  if (p.proactiveMode !== undefined) row["proactive_mode"] = p.proactiveMode;
-  if (p.dailyBriefEnabled !== undefined) row["daily_brief_enabled"] = p.dailyBriefEnabled;
+  if (p.proactiveMode !== undefined) row["proactive_tier"] = p.proactiveMode;
+  if (p.dailyBriefEnabled !== undefined) row["brief_enabled"] = p.dailyBriefEnabled;
   if (p.briefTimeLocal !== undefined) row["brief_time_local"] = p.briefTimeLocal;
   if (p.timezone !== undefined) row["timezone"] = p.timezone;
   if (p.quietHoursStart !== undefined) row["quiet_hours_start"] = p.quietHoursStart;
@@ -17,8 +17,8 @@ function proactiveToRow(p: Partial<ProactivePrefs>): Record<string, unknown> {
 function rowToProactive(row: Record<string, unknown> | null): ProactivePrefs {
   return {
     ...DEFAULT_PROACTIVE_PREFS,
-    ...(row?.proactive_mode !== undefined ? { proactiveMode: row.proactive_mode as ProactivePrefs["proactiveMode"] } : {}),
-    ...(row?.daily_brief_enabled !== undefined ? { dailyBriefEnabled: row.daily_brief_enabled as boolean } : {}),
+    ...(row?.proactive_tier !== undefined ? { proactiveMode: row.proactive_tier as ProactivePrefs["proactiveMode"] } : {}),
+    ...(row?.brief_enabled !== undefined ? { dailyBriefEnabled: row.brief_enabled as boolean } : {}),
     ...(row?.brief_time_local !== undefined ? { briefTimeLocal: row.brief_time_local as string } : {}),
     ...(row?.timezone !== undefined ? { timezone: row.timezone as string } : {}),
     ...(row?.quiet_hours_start !== undefined ? { quietHoursStart: row.quiet_hours_start as string } : {}),
@@ -56,7 +56,7 @@ export async function getAllPreferences(): Promise<{ voice: VoicePreferences; pr
   const userId = await getUserId();
   const { data } = await supabase
     .from("user_preferences")
-    .select("proactive_mode, daily_brief_enabled, brief_time_local, timezone, quiet_hours_start, quiet_hours_end")
+    .select("proactive_tier, brief_enabled, brief_time_local, timezone, quiet_hours_start, quiet_hours_end")
     .eq("user_id", userId)
     .single();
 
