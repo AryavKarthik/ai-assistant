@@ -3,6 +3,7 @@ import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { AppDock } from "./components/dock/AppDock";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { MemoryPage } from "./pages/MemoryPage";
 import { RemindersPage } from "./pages/RemindersPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
@@ -22,7 +23,7 @@ function AppContent() {
       {/* Main content */}
       <div className="flex-1 overflow-auto px-6 pb-28">
         {tab === "reminders" && <RemindersPage />}
-        {tab === "memory" && <PlaceholderPage title="Memory" />}
+        {tab === "memory" && <MemoryPage />}
         {tab === "connections" && <PlaceholderPage title="Connections" />}
         {tab === "settings" && <SettingsPage />}
       </div>

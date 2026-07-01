@@ -88,6 +88,20 @@ app.whenReady().then(async () => {
     import("./memory/reminders").then((m) => m.deleteReminderIpc(id)),
   );
 
+  // Memory
+  ipcMain.handle(IpcChannel.MemorySearch, (_e, req: { query: string }) =>
+    import("./memory/manage").then((m) => m.searchMemoriesIpc(req.query)),
+  );
+  ipcMain.handle(IpcChannel.MemoryPin, (_e, req: { id: string; pinned: boolean }) =>
+    import("./memory/manage").then((m) => m.pinMemoryIpc(req.id, req.pinned)),
+  );
+  ipcMain.handle(IpcChannel.MemoryArchive, (_e, req: { id: string; archived: boolean }) =>
+    import("./memory/manage").then((m) => m.archiveMemoryIpc(req.id, req.archived)),
+  );
+  ipcMain.handle(IpcChannel.MemoryDelete, (_e, id: string) =>
+    import("./memory/manage").then((m) => m.deleteMemoryIpc(id)),
+  );
+
   // Wake-word controller: resolve models dir for dev vs packaged builds
   const modelsDir = app.isPackaged
     ? join(process.resourcesPath, "wakeword-models")
