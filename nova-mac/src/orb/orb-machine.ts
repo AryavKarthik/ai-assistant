@@ -32,7 +32,7 @@ export const INITIAL_ORB_STATE: OrbState = {
 export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
   switch (event.type) {
     case "summon":
-      return state.name === "dormant"
+      return state.name === "dormant" || state.name === "bargeIn"
         ? { ...INITIAL_ORB_STATE, name: "listening" }
         : state;
 
@@ -58,7 +58,7 @@ export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
 
     case "bargeIn":
       return state.name === "responding"
-        ? { ...INITIAL_ORB_STATE, name: "listening" }
+        ? { ...INITIAL_ORB_STATE, name: "bargeIn" }
         : state;
 
     case "startWorking":

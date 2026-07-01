@@ -6,10 +6,10 @@ import { MicAnalyser } from "../voice/mic-analyser";
 import { TtsBargeInListener, ttsBargeInConfigFromSensitivity } from "../voice/tts-barge-in";
 import { VoicePlayer } from "../voice/player";
 import { startWakeCapture } from "../voice/wake-capture";
+import { playEarcon } from "../voice/earcon";
 import { nova } from "../lib/ipc";
 import { DEFAULT_VOICE_PREFERENCES, type VoicePreferences } from "@shared/types";
 
-/** Record from a MediaStream until silence is detected, returning the captured Blob. */
 async function recordUntilSilence(
   stream: MediaStream,
   silenceMs: number,
@@ -64,7 +64,6 @@ async function recordUntilSilence(
       }
     });
 
-    // Watchdog: max 30 seconds
     setTimeout(finish, 30_000);
   });
 }
@@ -84,29 +83,40 @@ export function useVoice(): { state: OrbState; level: number } {
   const player = useRef(new VoicePlayer());
   const prefs = useRef<VoicePreferences>(DEFAULT_VOICE_PREFERENCES);
   const reqId = useRef(0);
-
-  // Cleanup ref for the current turn's IPC listeners and barge-in listener
   const cleanupTurn = useRef<(() => void) | null>(null);
+  const cancelledRef = useRef(false);
 
   useEffect(() => {
-    let cancelled = false;
+    cancelledRef.current = false;
     let stopWake: (() => void) | null = null;
 
     async function boot() {
       prefs.current = await nova().getVoicePreferences();
-      if (cancelled) return;
+      if (cancelledRef.current) return;
       const stream = await mic.current.acquire();
-      if (cancelled) return;
+      if (cancelledRef.current) return;
       stopWake = startWakeCapture(stream, (buf) => nova().sendWakeFrame(buf));
     }
     void boot();
 
-    const offWake = nova().onWakeDetected(() => {
-      if (!cancelled) void runTurn();
+    // Listen for prefs updates pushed from main after Settings saves (added in Task 3+)
+    const offPrefs = nova().onPrefsChanged?.((p: unknown) => {
+      prefs.current = p as VoicePreferences;
     });
 
+    const offWake = nova().onWakeDetected(() => {
+      if (!cancelledRef.current) {
+        if (prefs.current.instantAckMode === "earcon") void playEarcon();
+        void runTurn();
+      }
+    });
+
+    function showError(message: string) {
+      dispatch({ type: "error", message });
+      setTimeout(() => dispatch({ type: "dismiss" }), 2000);
+    }
+
     async function runTurn() {
-      // Clean up any prior turn's listeners
       cleanupTurn.current?.();
       cleanupTurn.current = null;
 
@@ -116,36 +126,29 @@ export function useVoice(): { state: OrbState; level: number } {
       try {
         stream = await mic.current.acquire();
       } catch {
-        dispatch({ type: "dismiss" });
+        showError("Mic unavailable");
         endTurn();
         return;
       }
-      if (cancelled) {
+      if (cancelledRef.current) {
         dispatch({ type: "dismiss" });
         return;
       }
 
-      // 1) Record the command until silence
       let audio: Blob;
       try {
-        audio = await recordUntilSilence(
-          stream,
-          prefs.current.silenceMs,
-          (l) => setLevel(l),
-        );
+        audio = await recordUntilSilence(stream, prefs.current.silenceMs, (l) => setLevel(l));
       } catch {
-        dispatch({ type: "dismiss" });
+        showError("Recording failed");
         endTurn();
         return;
       }
       setLevel(0);
-
-      if (cancelled) {
+      if (cancelledRef.current) {
         dispatch({ type: "dismiss" });
         return;
       }
 
-      // 2) STT via IPC
       let transcript = "";
       try {
         const audioBase64 = await blobToBase64(audio);
@@ -154,25 +157,22 @@ export function useVoice(): { state: OrbState; level: number } {
           prefs.current.sttProvider,
         );
       } catch {
-        dispatch({ type: "dismiss" });
+        showError("Transcription failed");
         endTurn();
         return;
       }
 
       if (!transcript) {
-        dispatch({ type: "dismiss" });
+        showError("Nothing heard");
         endTurn();
         return;
       }
-
-      if (cancelled) {
+      if (cancelledRef.current) {
         dispatch({ type: "dismiss" });
         return;
       }
 
       dispatch({ type: "submit", transcript });
-
-      // 3) Stream the reply → drive orb + sentence-by-sentence TTS
       dispatch({ type: "responseStart" });
       const id = `turn-${++reqId.current}`;
 
@@ -186,7 +186,6 @@ export function useVoice(): { state: OrbState; level: number } {
           })
         : null;
 
-      // Barge-in: interrupt playback when the user speaks over the reply
       const barge = new TtsBargeInListener(
         ttsBargeInConfigFromSensitivity(prefs.current.bargeInSensitivity),
       );
@@ -211,18 +210,26 @@ export function useVoice(): { state: OrbState; level: number } {
         if (speaker) {
           void speaker.finish().then(() => {
             dispatch({ type: "responseEnd" });
-            endTurn();
+            if (prefs.current.interactionMode === "conversation") {
+              void runTurn();
+            } else {
+              endTurn();
+            }
           });
         } else {
           dispatch({ type: "responseEnd" });
-          endTurn();
+          if (prefs.current.interactionMode === "conversation") {
+            void runTurn();
+          } else {
+            endTurn();
+          }
         }
       });
 
       const offErr = nova().onChatError((p) => {
         if (p.requestId !== id) return;
         cleanup();
-        dispatch({ type: "error", message: p.message });
+        showError(p.message ?? "Something went wrong");
         endTurn();
       });
 
@@ -245,12 +252,13 @@ export function useVoice(): { state: OrbState; level: number } {
 
     function endTurn() {
       setLevel(0);
-      nova().voiceTurnEnded(); // tell main to re-arm wake scoring
+      nova().voiceTurnEnded();
     }
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       offWake();
+      offPrefs?.();
       stopWake?.();
       cleanupTurn.current?.();
       cleanupTurn.current = null;

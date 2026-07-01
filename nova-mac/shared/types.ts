@@ -46,7 +46,8 @@ export type OrbStateName =
   | "listening"
   | "processing"
   | "responding"
-  | "working";
+  | "working"
+  | "bargeIn";
 
 /** Int16 PCM, 16 kHz mono, one ~80ms frame (1280 samples). */
 export interface WakeFrame {

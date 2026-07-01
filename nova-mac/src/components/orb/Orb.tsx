@@ -7,7 +7,7 @@ import { WorkingChip } from "./WorkingChip";
 import { ResponseCard } from "../cards/ResponseCard";
 
 const SIZE: Record<OrbState["name"], number> = {
-  dormant: 12, listening: 120, processing: 120, responding: 120, working: 0,
+  dormant: 12, listening: 120, processing: 120, responding: 120, working: 0, bargeIn: 120,
 };
 
 export function Orb({

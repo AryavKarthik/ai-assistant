@@ -33,10 +33,14 @@ describe("orbReducer", () => {
     expect(orbReducer(at("responding"), { type: "responseEnd" }).name).toBe("dormant");
   });
 
-  it("bargeIn: responding → listening and clears response text", () => {
+  it("bargeIn: responding → bargeIn and clears response text", () => {
     const next = orbReducer({ ...at("responding"), responseText: "abc" }, { type: "bargeIn" });
-    expect(next.name).toBe("listening");
+    expect(next.name).toBe("bargeIn");
     expect(next.responseText).toBe("");
+  });
+
+  it("summon: bargeIn → listening (re-arm after barge-in)", () => {
+    expect(orbReducer(at("bargeIn"), { type: "summon" }).name).toBe("listening");
   });
 
   it("startWorking: → working with a step label", () => {

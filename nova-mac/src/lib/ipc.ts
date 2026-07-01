@@ -25,6 +25,8 @@ export interface NovaBridge {
   onWakeDetected(cb: () => void): () => void;
   getVoicePreferences(): Promise<import("@shared/types").VoicePreferences>;
   voiceTurnEnded(): void;
+  // Added in Task 3 — optional here so Task 1 compiles before preload is updated
+  onPrefsChanged?: (cb: (p: unknown) => void) => () => void;
 }
 
 declare global {
