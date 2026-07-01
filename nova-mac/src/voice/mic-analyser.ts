@@ -29,6 +29,11 @@ export class MicAnalyser {
       this.audioContext = new AudioContext();
     }
 
+    // Resume suspended context (common after user gesture / TTS plays)
+    if (this.audioContext.state === "suspended") {
+      void this.audioContext.resume();
+    }
+
     const ctx = this.audioContext;
     this.source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
@@ -38,6 +43,11 @@ export class MicAnalyser {
 
     const tick = () => {
       if (this.disposed) return;
+      if (ctx.state === "suspended") {
+        void ctx.resume().catch(() => {});
+        this.raf = requestAnimationFrame(tick);
+        return;
+      }
       analyser.getByteFrequencyData(data);
       onLevel(measureSpeechBandLevel(data));
       this.raf = requestAnimationFrame(tick);

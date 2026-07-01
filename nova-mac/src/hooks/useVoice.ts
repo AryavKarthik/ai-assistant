@@ -186,11 +186,16 @@ export function useVoice(): { state: OrbState; level: number } {
           })
         : null;
 
+      // Set to true when barge-in fires so the speaker.finish() .then() callback
+      // knows not to call endTurn() / runTurn() (the new turn handles its own lifecycle).
+      let bargeInFired = false;
+
       const barge = new TtsBargeInListener(
         ttsBargeInConfigFromSensitivity(prefs.current.bargeInSensitivity),
       );
       if (prefs.current.bargeInEnabled && speaker) {
         barge.start(stream, () => {
+          bargeInFired = true;
           player.current.stop();
           nova().chatCancel(id);
           dispatch({ type: "bargeIn" });
@@ -206,22 +211,32 @@ export function useVoice(): { state: OrbState; level: number } {
 
       const offDone = nova().onChatDone((p) => {
         if (p.requestId !== id) return;
-        cleanup();
+        // Remove IPC listeners but intentionally keep the barge listener running:
+        // TTS is still playing via speaker.finish() and the user should still be
+        // able to interrupt. Barge is stopped after finish() resolves (or if barge
+        // already fired, the guard below prevents double-completion).
+        cleanupListeners();
         if (speaker) {
           void speaker.finish().then(() => {
+            barge.stop();
+            if (!bargeInFired) {
+              dispatch({ type: "responseEnd" });
+              if (prefs.current.interactionMode === "conversation") {
+                void runTurn();
+              } else {
+                endTurn();
+              }
+            }
+          });
+        } else {
+          barge.stop();
+          if (!bargeInFired) {
             dispatch({ type: "responseEnd" });
             if (prefs.current.interactionMode === "conversation") {
               void runTurn();
             } else {
               endTurn();
             }
-          });
-        } else {
-          dispatch({ type: "responseEnd" });
-          if (prefs.current.interactionMode === "conversation") {
-            void runTurn();
-          } else {
-            endTurn();
           }
         }
       });
@@ -233,12 +248,16 @@ export function useVoice(): { state: OrbState; level: number } {
         endTurn();
       });
 
-      function cleanup() {
+      function cleanupListeners() {
         offDelta();
         offDone();
         offErr();
-        barge.stop();
         cleanupTurn.current = null;
+      }
+
+      function cleanup() {
+        cleanupListeners();
+        barge.stop();
       }
 
       cleanupTurn.current = cleanup;

@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/proactive",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/memory-decay",
+      "schedule": "0 3 * * 0"
+    }
+  ]
+}
