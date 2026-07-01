@@ -107,15 +107,18 @@ export async function listRemindersIpc(status = "pending"): Promise<ReminderItem
 
 export async function completeReminderIpc(id: string): Promise<void> {
   const supabase = getSupabase();
+  const userId = await getUserId();
   const { error } = await supabase
     .from("reminders")
     .update({ status: "done", completed_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", userId);
   if (error) throw error;
 }
 
 export async function deleteReminderIpc(id: string): Promise<void> {
   const supabase = getSupabase();
-  const { error } = await supabase.from("reminders").delete().eq("id", id);
+  const userId = await getUserId();
+  const { error } = await supabase.from("reminders").delete().eq("id", id).eq("user_id", userId);
   if (error) throw error;
 }
