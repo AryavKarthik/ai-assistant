@@ -1,4 +1,4 @@
-import { ipcMain, type WebContents } from "electron";
+import { ipcMain, type BrowserWindow, type WebContents } from "electron";
 import { IpcChannel, type AuthState, type ConversationSummary, type MemorySummary } from "@shared/types";
 
 export interface IpcHandlers {
@@ -31,6 +31,40 @@ export interface WakeBridge {
 export function registerWakeBridge(bridge: WakeBridge): void {
   ipcMain.on(IpcChannel.WakeAudioFrame, (_e, buf: ArrayBuffer) => bridge.pushFrame(buf));
   ipcMain.on(IpcChannel.WakeSetEnabled, (_e, on: boolean) => bridge.setEnabled(on));
+}
+
+export function registerWindowHandlers(
+  orbWindow: () => BrowserWindow | null,
+  appWindow: () => BrowserWindow | null,
+  createApp: () => BrowserWindow,
+): void {
+  // GetWindowMode: return "orb" or "app" based on which window sent the request
+  ipcMain.handle(IpcChannel.GetWindowMode, (e) => {
+    const orb = orbWindow();
+    if (orb && e.sender.id === orb.webContents.id) return "orb";
+    return "app";
+  });
+
+  ipcMain.on(IpcChannel.AppOpen, () => {
+    let app = appWindow();
+    if (!app || app.isDestroyed()) {
+      app = createApp();
+    }
+    const orb = orbWindow();
+    orb?.hide();
+    if (app.isVisible()) {
+      app.focus();
+    } else {
+      app.show();
+    }
+  });
+
+  ipcMain.on(IpcChannel.AppClose, () => {
+    const app = appWindow();
+    app?.hide();
+    const orb = orbWindow();
+    orb?.show();
+  });
 }
 
 export function registerIpcHandlers(handlers: IpcHandlers): void {

@@ -40,3 +40,33 @@ export function createOrbWindow(): BrowserWindow {
   }
   return win;
 }
+
+export function createAppWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 920,
+    height: 680,
+    minWidth: 760,
+    minHeight: 560,
+    show: false,
+    frame: true,
+    transparent: false,
+    vibrancy: "under-window",
+    titleBarStyle: "hiddenInset",
+    backgroundColor: "#080808",
+    webPreferences: {
+      preload: join(import.meta.dirname, "../preload/preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
+    },
+  });
+
+  if (process.env.ELECTRON_RENDERER_URL) {
+    win.loadURL(process.env.ELECTRON_RENDERER_URL);
+  } else {
+    win.loadFile(join(import.meta.dirname, "../renderer/index.html"));
+  }
+
+  win.once("ready-to-show", () => win.show());
+  return win;
+}

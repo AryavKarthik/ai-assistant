@@ -7,15 +7,16 @@ loadEnv({ path: [".env.local", ".env"] });
 
 import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
 import { join } from "node:path";
-import { createOrbWindow } from "./window";
+import { createOrbWindow, createAppWindow } from "./window";
 import { createTray } from "./tray";
-import { registerIpcHandlers, registerChatBridge, registerWakeBridge } from "./ipc";
+import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWindowHandlers } from "./ipc";
 import { streamChat, cancelChat } from "./chat";
 import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
 import { WakeWordController } from "./wakeword/index";
 import { IpcChannel } from "@shared/types";
 
-let win: BrowserWindow | null = null;
+let orbWin: BrowserWindow | null = null;
+let appWin: BrowserWindow | null = null;
 // Hold a reference so the tray is not garbage-collected.
 let _trayRef: ReturnType<typeof createTray> | null = null;
 
@@ -25,7 +26,11 @@ app.setAsDefaultProtocolClient("nova");
 // macOS delivers deep links via open-url
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  if (url.startsWith("nova://auth-callback")) void handleAuthCallback(url);
+  if (url.startsWith("nova://auth-callback")) {
+    void handleAuthCallback(url);
+  } else if (url.startsWith("nova://connections-callback")) {
+    void import("./google/connections").then((m) => m.handleConnectionsCallback(url, appWin));
+  }
 });
 
 app.whenReady().then(async () => {
@@ -45,6 +50,16 @@ app.whenReady().then(async () => {
       void streamChat(req, (channel, payload) => sender.send(channel, payload)),
     cancel: cancelChat,
   });
+
+  registerWindowHandlers(
+    () => orbWin,
+    () => appWin,
+    () => {
+      appWin = createAppWindow();
+      appWin.on("closed", () => { appWin = null; });
+      return appWin;
+    },
+  );
 
   // Wake-word controller: resolve models dir for dev vs packaged builds
   const modelsDir = app.isPackaged
@@ -69,14 +84,24 @@ app.whenReady().then(async () => {
     console.warn("[nova] native probe not built (expected in dev)");
   }
   await restoreSession();
-  win = createOrbWindow();
-  _trayRef = createTray(win);
+  orbWin = createOrbWindow();
+  _trayRef = createTray(orbWin, () => {
+    // "Open Nova" tray item callback
+    let app = appWin;
+    if (!app || app.isDestroyed()) {
+      app = createAppWindow();
+      appWin = app;
+    }
+    orbWin?.hide();
+    app.show();
+    app.focus();
+  });
   void _trayRef; // Keep reference to prevent garbage collection
   globalShortcut.register("CommandOrControl+Shift+Space", () => {
-    if (!win) return;
-    win.isVisible() ? win.hide() : win.show();
+    if (!orbWin) return;
+    orbWin.isVisible() ? orbWin.hide() : orbWin.show();
   });
-  win.once("ready-to-show", () => console.log("[nova] window ready"));
+  orbWin.once("ready-to-show", () => console.log("[nova] orb window ready"));
 });
 
 app.on("will-quit", () => globalShortcut.unregisterAll());

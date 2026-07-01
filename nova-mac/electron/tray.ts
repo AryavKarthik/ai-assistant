@@ -1,7 +1,7 @@
 import { Tray, Menu, nativeImage, app, type BrowserWindow } from "electron";
 import { join } from "node:path";
 
-export function createTray(win: BrowserWindow): Tray {
+export function createTray(win: BrowserWindow, onOpenApp?: () => void): Tray {
   const icon = nativeImage.createFromPath(
     join(import.meta.dirname, "../../build/trayTemplate.png"),
   );
@@ -10,7 +10,8 @@ export function createTray(win: BrowserWindow): Tray {
   tray.setToolTip("Nova");
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: "Open Nova", click: () => win.show() },
+      { label: "Show Orb", click: () => { win.isVisible() ? win.hide() : win.show(); } },
+      { label: "Open Nova", click: () => onOpenApp?.() },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
     ]),
