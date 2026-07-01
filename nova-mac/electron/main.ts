@@ -77,6 +77,17 @@ app.whenReady().then(async () => {
     return updated;
   });
 
+  // Reminders
+  ipcMain.handle(IpcChannel.RemindersGet, () =>
+    import("./memory/reminders").then((m) => m.listRemindersIpc()),
+  );
+  ipcMain.handle(IpcChannel.RemindersDone, (_e, id: string) =>
+    import("./memory/reminders").then((m) => m.completeReminderIpc(id)),
+  );
+  ipcMain.handle(IpcChannel.RemindersDelete, (_e, id: string) =>
+    import("./memory/reminders").then((m) => m.deleteReminderIpc(id)),
+  );
+
   // Wake-word controller: resolve models dir for dev vs packaged builds
   const modelsDir = app.isPackaged
     ? join(process.resourcesPath, "wakeword-models")

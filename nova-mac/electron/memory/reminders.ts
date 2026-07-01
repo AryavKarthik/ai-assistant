@@ -1,5 +1,7 @@
 import { getSupabase } from "../supabase";
+import { getUserId } from "./client";
 import type { Reminder } from "./types";
+import type { ReminderItem } from "@shared/types";
 
 export async function listUpcomingReminders(
   userId: string,
@@ -78,4 +80,42 @@ export async function deleteAllPendingReminders(userId: string): Promise<number>
     .from("reminders").delete().eq("user_id", userId).eq("status", "pending").select("id");
   if (error) throw error;
   return (data ?? []).length;
+}
+
+// ---------------------------------------------------------------------------
+// IPC-facing helpers (resolve userId from the active session internally)
+// ---------------------------------------------------------------------------
+
+export async function listRemindersIpc(status = "pending"): Promise<ReminderItem[]> {
+  const supabase = getSupabase();
+  const userId = await getUserId();
+  const { data, error } = await supabase
+    .from("reminders")
+    .select("id, title, due_at, status")
+    .eq("user_id", userId)
+    .eq("status", status)
+    .order("due_at", { ascending: true, nullsFirst: false })
+    .limit(100);
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    title: r.title as string,
+    dueAt: r.due_at as string | null,
+    status: r.status as string,
+  }));
+}
+
+export async function completeReminderIpc(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase
+    .from("reminders")
+    .update({ status: "done", completed_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteReminderIpc(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.from("reminders").delete().eq("id", id);
+  if (error) throw error;
 }
