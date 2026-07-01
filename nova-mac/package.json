@@ -14,14 +14,18 @@
     "wake:models": "node scripts/download-wake-models.mjs"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.5.2",
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
     "node-addon-api": "^8.2.0",
     "node-gyp": "^10.2.0",
+    "postcss": "^8.5.16",
+    "tailwindcss": "^4.3.2",
     "typescript": "^5.6.0",
     "vite": "^5.4.0",
     "vitest": "^2.1.0"
@@ -29,14 +33,17 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.105.0",
     "@supabase/supabase-js": "^2.108.2",
+    "@tabler/icons-react": "^3.44.0",
     "@types/ws": "^8.18.1",
     "bindings": "^1.5.0",
+    "clsx": "^2.1.1",
     "dotenv": "^16.6.1",
     "framer-motion": "^11.11.0",
     "googleapis": "^173.0.0",
     "onnxruntime-node": "^1.20.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.6.0",
     "ws": "^8.21.0"
   }
 }
