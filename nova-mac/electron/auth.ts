@@ -2,6 +2,8 @@ import { BrowserWindow } from "electron";
 import { getSupabase } from "./supabase";
 import { saveSession, loadSession, clearSession } from "./session-store";
 import { IpcChannel, type AuthState } from "@shared/types";
+import { resetConversationCache } from "./conversation";
+import { resetUserIdCache } from "./memory/client";
 
 function emit(channel: IpcChannel, payload: unknown): void {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
@@ -62,5 +64,7 @@ export async function getAuthState(): Promise<AuthState> {
 export async function signOut(): Promise<void> {
   await getSupabase().auth.signOut();
   clearSession();
+  resetConversationCache();
+  resetUserIdCache();
   emit(IpcChannel.AuthChanged, { signedIn: false, email: null });
 }

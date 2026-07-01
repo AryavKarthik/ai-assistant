@@ -239,6 +239,7 @@ export function useVoice(): { state: OrbState; level: number } {
       nova().chatSend({
         requestId: id,
         messages: [{ role: "user", content: transcript }],
+        inputModality: "voice",
       });
     }
 
