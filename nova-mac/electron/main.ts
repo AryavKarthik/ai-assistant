@@ -88,6 +88,21 @@ app.whenReady().then(async () => {
     import("./memory/reminders").then((m) => m.deleteReminderIpc(id)),
   );
 
+  // Connections
+  ipcMain.handle(IpcChannel.ConnectionsStatus, () =>
+    import("./google/connections").then((m) => m.getConnectionsStatus()),
+  );
+  ipcMain.handle(IpcChannel.ConnectionsConnect, (_e, req: { service: string }) =>
+    import("./google/connections").then((m) =>
+      m.startOAuthFlow(req.service as import("./google/scopes").GoogleService),
+    ),
+  );
+  ipcMain.handle(IpcChannel.ConnectionsDisconnect, (_e, req: { service: string }) =>
+    import("./google/connections").then((m) =>
+      m.disconnectService(req.service as import("./google/scopes").GoogleService),
+    ),
+  );
+
   // Memory
   ipcMain.handle(IpcChannel.MemorySearch, (_e, req: { query: string }) =>
     import("./memory/manage").then((m) => m.searchMemoriesIpc(req.query)),

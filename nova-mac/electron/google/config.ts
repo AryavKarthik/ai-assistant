@@ -16,29 +16,8 @@ export function getGoogleClientSecret(): string {
   return requireEnv("GOOGLE_CLIENT_SECRET");
 }
 
-export function getRedirectUriForService(service: GoogleService): string {
-  // The Mac app doesn't run an HTTP server for OAuth callbacks.
-  // Redirect URIs are only needed if OAuth initiation is ever added from Mac.
-  const origin = "http://localhost:3000";
-
-  switch (service) {
-    case "calendar":
-      return (
-        process.env.GOOGLE_REDIRECT_URI ??
-        process.env.GOOGLE_OAUTH_REDIRECT_URI ??
-        `${origin}/api/google/calendar/callback`
-      );
-    case "gmail":
-      return (
-        process.env.GOOGLE_GMAIL_REDIRECT_URI ??
-        `${origin}/api/google/gmail/callback`
-      );
-    case "youtube":
-      return (
-        process.env.GOOGLE_YOUTUBE_REDIRECT_URI ??
-        `${origin}/api/google/youtube/callback`
-      );
-  }
+export function getRedirectUriForService(_service: GoogleService): string {
+  return "nova://connections-callback";
 }
 
 export function getTokenEncryptionKey(): Buffer {

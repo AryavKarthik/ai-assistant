@@ -2,10 +2,10 @@ import { useEffect, useState } from "react";
 import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { AppDock } from "./components/dock/AppDock";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
-import { MemoryPage } from "./pages/MemoryPage";
-import { RemindersPage } from "./pages/RemindersPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { RemindersPage } from "./pages/RemindersPage";
+import { MemoryPage } from "./pages/MemoryPage";
+import { ConnectionsPage } from "./pages/ConnectionsPage";
 
 type Tab = "reminders" | "memory" | "connections" | "settings";
 
@@ -17,17 +17,13 @@ function AppContent() {
       className="flex flex-col"
       style={{ height: "100vh", background: "var(--nova-bg)", color: "var(--nova-text)" }}
     >
-      {/* Traffic lights inset area */}
       <div style={{ height: 28, WebkitAppRegion: "drag" } as React.CSSProperties} />
-
-      {/* Main content */}
       <div className="flex-1 overflow-auto px-6 pb-28">
         {tab === "reminders" && <RemindersPage />}
         {tab === "memory" && <MemoryPage />}
-        {tab === "connections" && <PlaceholderPage title="Connections" />}
+        {tab === "connections" && <ConnectionsPage />}
         {tab === "settings" && <SettingsPage />}
       </div>
-
       <AppDock onTabChange={setTab} />
     </div>
   );
