@@ -2,19 +2,18 @@ import { shell, type BrowserWindow } from "electron";
 import crypto from "node:crypto";
 import { getSupabase } from "../supabase";
 import { getUserId } from "../memory/client";
-import { buildServiceAuthUrl, exchangeCodeForTokens } from "./oauth";
+import { buildServiceAuthUrl, exchangeCodeForTokens, getGoogleAccountEmail } from "./oauth";
+import { encryptToken } from "./crypto";
 import type { GoogleService } from "./scopes";
+import { mergeScopes } from "./scopes";
 import type { GoogleConnectionStatus } from "@shared/types";
 import { IpcChannel } from "@shared/types";
 
-// code_verifier keyed by state param for PKCE
 const pendingStates = new Map<string, { service: GoogleService }>();
 
 export async function startOAuthFlow(service: GoogleService): Promise<void> {
   const state = crypto.randomUUID();
   pendingStates.set(state, { service });
-  // PKCE not needed since googleapis handles it internally for desktop flows;
-  // state param provides CSRF protection
   const url = buildServiceAuthUrl(service, state);
   await shell.openExternal(url);
 }
@@ -26,30 +25,51 @@ export async function handleConnectionsCallback(
   const parsed = new URL(url);
   const code = parsed.searchParams.get("code");
   const state = parsed.searchParams.get("state");
-
   if (!code || !state) return;
 
   const pending = pendingStates.get(state);
   if (!pending) return;
   pendingStates.delete(state);
 
-  const tokens = await exchangeCodeForTokens(code, pending.service);
+  const { service } = pending;
+  const tokens = await exchangeCodeForTokens(code, service);
+
+  const refreshToken = tokens.refresh_token;
+  if (!refreshToken) return; // no refresh token means we can't persist a long-lived connection
+
   const supabase = getSupabase();
   const userId = await getUserId();
 
-  const { error } = await supabase.from("google_oauth_tokens").upsert(
-    {
-      user_id: userId,
-      service: pending.service,
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token,
-      expiry_date: tokens.expiry_date,
-    },
-    { onConflict: "user_id,service" },
-  );
+  // Read existing row to merge scopes
+  const { data: existing } = await supabase
+    .from("google_oauth_tokens")
+    .select("scopes")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const mergedScopes = mergeScopes(existing?.scopes ?? [], service);
+
+  const connectedEmail = await getGoogleAccountEmail(tokens.access_token ?? "", service);
+
+  const connectedField = `${service}_connected` as
+    | "calendar_connected"
+    | "gmail_connected"
+    | "youtube_connected";
+
+  const row: Record<string, unknown> = {
+    user_id: userId,
+    encrypted_refresh: encryptToken(refreshToken),
+    scopes: mergedScopes,
+    [connectedField]: true,
+    updated_at: new Date().toISOString(),
+  };
+  if (connectedEmail) row.connected_email = connectedEmail;
+
+  const { error } = await supabase
+    .from("google_oauth_tokens")
+    .upsert(row, { onConflict: "user_id" });
   if (error) throw error;
 
-  // Notify renderer to refresh status
   appWin?.webContents.send(IpcChannel.ConnectionsCallback);
 }
 
@@ -59,23 +79,29 @@ export async function getConnectionsStatus(): Promise<GoogleConnectionStatus> {
 
   const { data } = await supabase
     .from("google_oauth_tokens")
-    .select("service")
-    .eq("user_id", userId);
+    .select("calendar_connected, gmail_connected, youtube_connected, connected_email")
+    .eq("user_id", userId)
+    .maybeSingle();
 
-  const connected = new Set((data ?? []).map((r) => r.service));
   return {
-    calendar: { connected: connected.has("calendar"), email: null },
-    gmail: { connected: connected.has("gmail"), email: null },
-    youtube: { connected: connected.has("youtube"), email: null },
+    calendar: { connected: data?.calendar_connected ?? false, email: data?.connected_email ?? null },
+    gmail: { connected: data?.gmail_connected ?? false, email: data?.connected_email ?? null },
+    youtube: { connected: data?.youtube_connected ?? false, email: data?.connected_email ?? null },
   };
 }
 
 export async function disconnectService(service: GoogleService): Promise<void> {
   const supabase = getSupabase();
   const userId = await getUserId();
-  await supabase
+
+  const connectedField = `${service}_connected` as
+    | "calendar_connected"
+    | "gmail_connected"
+    | "youtube_connected";
+
+  const { error } = await supabase
     .from("google_oauth_tokens")
-    .delete()
-    .eq("user_id", userId)
-    .eq("service", service);
+    .update({ [connectedField]: false, updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  if (error) throw error;
 }
