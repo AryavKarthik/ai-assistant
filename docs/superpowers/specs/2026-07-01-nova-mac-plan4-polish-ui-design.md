@@ -223,12 +223,38 @@ export function createAppWindow(): BrowserWindow {
 
 ### Navigation dock
 
-Port of web app `AppDock` using `FloatingDock` component:
-- Install `@tabler/icons-react` (already in web app)
-- Tabs: **Orb** (mic icon) · **Reminders** (bell) · **Memory** (brain) · **Connections** (plug) · **Settings** (gear) · **Sign out** (logout)
-- Same pill styling: `rounded-[24px] border border-[rgb(255_255_255/8%)] bg-[rgb(16_16_16/88%)] backdrop-blur-xl`
-- Clicking **Orb** tab: calls `nova().appClose()` → expanded window hides, orb window shows
-- Clicking **Sign out**: calls `nova().authSignOut()`
+**Exact port** of the web app's `FloatingDock` + `AppDock` into the renderer.
+
+**`src/components/ui/floating-dock.tsx`** — copy of web app's `components/ui/floating-dock.tsx` with one adaptation: items use `onClick: () => void` instead of `href: string` (no page routing in Electron). The macOS-dock magnification effect (mouse proximity spring zoom, `useMotionValue` / `useSpring` / `useTransform`) is preserved exactly.
+
+```typescript
+// Adapted item type for Electron
+type DockItem = { title: string; icon: React.ReactNode; onClick: () => void };
+```
+
+**Dependencies to add:**
+- `@tabler/icons-react` — same icons as web app (IconMessage, IconBell, IconBrain, IconPlugConnected, IconSettings, IconLogout)
+- `clsx` + `tailwind-merge` → `src/lib/utils.ts` with `cn()` helper (same as web app)
+
+**`src/components/dock/AppDock.tsx`** — port of web app's `AppDock`:
+```typescript
+const items: DockItem[] = [
+  { title: "Orb",         icon: <IconMicrophone />, onClick: () => nova().appClose() },
+  { title: "Reminders",   icon: <IconBell />,        onClick: () => setTab("reminders") },
+  { title: "Memory",      icon: <IconBrain />,       onClick: () => setTab("memory") },
+  { title: "Connections", icon: <IconPlugConnected />, onClick: () => setTab("connections") },
+  { title: "Settings",    icon: <IconSettings />,    onClick: () => setTab("settings") },
+  { title: "Sign out",    icon: <IconLogout />,      onClick: () => nova().authSignOut() },
+];
+```
+
+Same pill container styling as web app:
+```
+rounded-[24px] border border-[rgb(255_255_255/8%)] bg-[rgb(16_16_16/88%)] px-4 pb-2.5 pt-2
+shadow-[0_12px_40px_rgb(0_0_0/45%),inset_0_1px_0_rgb(255_255_255/6%)] backdrop-blur-xl
+```
+
+Positioned fixed at bottom-center of the expanded window.
 
 ### Routing
 
