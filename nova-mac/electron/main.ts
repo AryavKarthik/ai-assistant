@@ -61,6 +61,22 @@ app.whenReady().then(async () => {
     },
   );
 
+  // Prefs
+  ipcMain.handle(IpcChannel.PrefsGet, () =>
+    import("./voice/save-preferences").then((m) => m.getAllPreferences()),
+  );
+  ipcMain.handle(IpcChannel.PrefsSet, async (_e, patch: { voice?: unknown; proactive?: unknown }) => {
+    const mod = await import("./voice/save-preferences");
+    if (patch.voice) await mod.saveVoicePreferences(patch.voice as never);
+    if (patch.proactive) await mod.saveProactivePreferences(patch.proactive as Record<string, unknown>);
+    const updated = await mod.getAllPreferences();
+    // Broadcast to all windows so orb voice prefs stay in sync
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send(IpcChannel.PrefsChanged, updated.voice);
+    }
+    return updated;
+  });
+
   // Wake-word controller: resolve models dir for dev vs packaged builds
   const modelsDir = app.isPackaged
     ? join(process.resourcesPath, "wakeword-models")

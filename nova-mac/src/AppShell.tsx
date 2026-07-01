@@ -3,6 +3,7 @@ import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { AppDock } from "./components/dock/AppDock";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 type Tab = "reminders" | "memory" | "connections" | "settings";
 
@@ -22,7 +23,7 @@ function AppContent() {
         {tab === "reminders" && <PlaceholderPage title="Reminders" />}
         {tab === "memory" && <PlaceholderPage title="Memory" />}
         {tab === "connections" && <PlaceholderPage title="Connections" />}
-        {tab === "settings" && <PlaceholderPage title="Settings" />}
+        {tab === "settings" && <SettingsPage />}
       </div>
 
       <AppDock onTabChange={setTab} />
