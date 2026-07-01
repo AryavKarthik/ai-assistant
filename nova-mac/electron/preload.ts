@@ -42,4 +42,30 @@ contextBridge.exposeInMainWorld("nova", {
   },
   getVoicePreferences: () => ipcRenderer.invoke(IpcChannel.VoiceGetPreferences),
   voiceTurnEnded: () => ipcRenderer.send(IpcChannel.VoiceTurnEnded),
+  getWindowMode: (): Promise<string> => ipcRenderer.invoke(IpcChannel.GetWindowMode),
+  appOpen: () => ipcRenderer.send(IpcChannel.AppOpen),
+  appClose: () => ipcRenderer.send(IpcChannel.AppClose),
+  onPrefsChanged: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.PrefsChanged, h);
+    return () => ipcRenderer.removeListener(IpcChannel.PrefsChanged, h);
+  },
+  prefsGet: () => ipcRenderer.invoke(IpcChannel.PrefsGet),
+  prefsSet: (patch: unknown) => ipcRenderer.invoke(IpcChannel.PrefsSet, patch),
+  connectionsStatus: () => ipcRenderer.invoke(IpcChannel.ConnectionsStatus),
+  connectionsConnect: (req: unknown) => ipcRenderer.invoke(IpcChannel.ConnectionsConnect, req),
+  connectionsDisconnect: (req: unknown) => ipcRenderer.invoke(IpcChannel.ConnectionsDisconnect, req),
+  onConnectionsCallback: (cb: () => void): (() => void) => {
+    const h = () => cb();
+    ipcRenderer.on(IpcChannel.ConnectionsCallback, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ConnectionsCallback, h);
+  },
+  youtubeRefreshTaste: () => ipcRenderer.invoke(IpcChannel.YoutubeRefreshTaste),
+  remindersGet: () => ipcRenderer.invoke(IpcChannel.RemindersGet),
+  remindersDone: (id: string) => ipcRenderer.invoke(IpcChannel.RemindersDone, id),
+  remindersDelete: (id: string) => ipcRenderer.invoke(IpcChannel.RemindersDelete, id),
+  memorySearch: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemorySearch, req),
+  memoryPin: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryPin, req),
+  memoryArchive: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryArchive, req),
+  memoryDelete: (id: string) => ipcRenderer.invoke(IpcChannel.MemoryDelete, id),
 });

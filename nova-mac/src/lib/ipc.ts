@@ -25,8 +25,24 @@ export interface NovaBridge {
   onWakeDetected(cb: () => void): () => void;
   getVoicePreferences(): Promise<import("@shared/types").VoicePreferences>;
   voiceTurnEnded(): void;
-  // Added in Task 3 — optional here so Task 1 compiles before preload is updated
-  onPrefsChanged?: (cb: (p: unknown) => void) => () => void;
+  getWindowMode(): Promise<string>;
+  appOpen(): void;
+  appClose(): void;
+  onPrefsChanged(cb: (p: unknown) => void): () => void;
+  prefsGet(): Promise<unknown>;
+  prefsSet(patch: unknown): Promise<unknown>;
+  connectionsStatus(): Promise<unknown>;
+  connectionsConnect(req: unknown): Promise<void>;
+  connectionsDisconnect(req: unknown): Promise<void>;
+  onConnectionsCallback(cb: () => void): () => void;
+  youtubeRefreshTaste(): Promise<void>;
+  remindersGet(): Promise<unknown>;
+  remindersDone(id: string): Promise<void>;
+  remindersDelete(id: string): Promise<void>;
+  memorySearch(req: unknown): Promise<unknown>;
+  memoryPin(req: unknown): Promise<void>;
+  memoryArchive(req: unknown): Promise<void>;
+  memoryDelete(id: string): Promise<void>;
 }
 
 declare global {

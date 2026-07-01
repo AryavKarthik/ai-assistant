@@ -21,6 +21,30 @@ export enum IpcChannel {
   ChatDone = "chat:done",
   ChatError = "chat:error",
   ChatCancel = "chat:cancel",
+  // Window management
+  GetWindowMode = "window:get-mode",
+  AppOpen = "app:open",
+  AppClose = "app:close",
+  // Preferences push
+  PrefsChanged = "prefs:changed",
+  // Prefs get/set (used by Settings tab — wired in Task 7)
+  PrefsGet = "prefs:get",
+  PrefsSet = "prefs:set",
+  // Connections (wired in Task 10)
+  ConnectionsStatus = "connections:status",
+  ConnectionsConnect = "connections:connect",
+  ConnectionsDisconnect = "connections:disconnect",
+  ConnectionsCallback = "connections:callback",
+  YoutubeRefreshTaste = "youtube:refresh-taste",
+  // Reminders (wired in Task 8)
+  RemindersGet = "reminders:get",
+  RemindersDone = "reminders:done",
+  RemindersDelete = "reminders:delete",
+  // Memory (wired in Task 9)
+  MemorySearch = "memory:search",
+  MemoryPin = "memory:pin",
+  MemoryArchive = "memory:archive",
+  MemoryDelete = "memory:delete",
 }
 
 export interface AuthState {
@@ -140,6 +164,56 @@ export interface VoicePreferences {
   deepgramTtsVoice: string;
   ttsSpeed: number;
   ttsHd: boolean;
+}
+
+export type WindowMode = "orb" | "app";
+
+export interface ProactivePrefs {
+  proactiveMode: "off" | "reminders_only" | "full";
+  dailyBriefEnabled: boolean;
+  briefTimeLocal: string;
+  timezone: string;
+  quietHoursStart: string;
+  quietHoursEnd: string;
+}
+
+export const DEFAULT_PROACTIVE_PREFS: ProactivePrefs = {
+  proactiveMode: "off",
+  dailyBriefEnabled: false,
+  briefTimeLocal: "08:00",
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  quietHoursStart: "22:00",
+  quietHoursEnd: "08:00",
+};
+
+export interface AllPrefs {
+  voice: VoicePreferences;
+  proactive: ProactivePrefs;
+}
+
+export type GoogleService = "calendar" | "gmail" | "youtube";
+
+export interface GoogleConnectionStatus {
+  calendar: { connected: boolean; email: string | null };
+  gmail: { connected: boolean; email: string | null };
+  youtube: { connected: boolean; email: string | null };
+}
+
+export interface ReminderItem {
+  id: string;
+  title: string;
+  dueAt: string | null;
+  status: string;
+}
+
+export interface MemoryItem {
+  id: string;
+  content: string;
+  memoryType: string | null;
+  salience: number;
+  isPinned: boolean;
+  isArchived: boolean;
+  createdAt: string;
 }
 
 export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
