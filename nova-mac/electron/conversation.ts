@@ -76,10 +76,11 @@ export async function loadLastNMessages(
     .from("messages")
     .select("id, role, content")
     .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(limit);
 
   if (error) throw error;
   return ((data ?? []) as Array<{ id: string; role: string; content: string }>)
-    .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content }));
+    .map((m) => ({ id: m.id, role: m.role as "user" | "assistant", content: m.content }))
+    .reverse();
 }

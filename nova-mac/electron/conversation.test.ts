@@ -61,9 +61,10 @@ describe("loadLastNMessages", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("returns messages in chronological order (oldest first)", async () => {
+    // DB returns newest-first (ascending:false); .reverse() restores chronological order
     const rows = [
-      { id: "m1", role: "user", content: "Hello" },
       { id: "m2", role: "assistant", content: "Hi there" },
+      { id: "m1", role: "user", content: "Hello" },
     ];
     const chain = {
       select: vi.fn().mockReturnThis(),
