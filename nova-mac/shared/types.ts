@@ -32,6 +32,8 @@ export enum IpcChannel {
   OrbSetExpanded = "orb:setExpanded",
   /** Main broadcasts the orb window's current expanded state. */
   OrbExpandedChanged = "orb:expandedChanged",
+  /** Main broadcasts live drag velocity while the user is dragging the orb window. */
+  OrbDragVelocity = "orb:dragVelocity",
   // Preferences push
   PrefsChanged = "prefs:changed",
   // Prefs get/set (used by Settings tab — wired in Task 7)
@@ -120,6 +122,13 @@ export interface ChatToolUseEvent {
 export interface TimerFiredEvent {
   id: string;
   label: string;
+}
+
+/** Instantaneous window-drag velocity in pixels/ms, used to drive a jelly
+ *  squash-and-stretch wiggle on the orb while the user drags it. */
+export interface OrbDragVelocityEvent {
+  vx: number;
+  vy: number;
 }
 
 export interface TranscribeRequest {

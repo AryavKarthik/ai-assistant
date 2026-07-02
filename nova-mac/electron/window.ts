@@ -2,7 +2,7 @@ import { BrowserWindow, screen } from "electron";
 import { join } from "node:path";
 
 // Two orb window states: a tiny floating Siri-like orb, and the expanded chat panel.
-export const ORB_MINI_SIZE = 110;
+export const ORB_MINI_SIZE = 96;
 export const ORB_PANEL_WIDTH = 380;
 export const ORB_PANEL_HEIGHT = 520;
 // Tight to the corner, hugging the menu bar the way Siri's own icon does.
@@ -43,27 +43,31 @@ export function resizeOrb(win: BrowserWindow, expanded: boolean): void {
 }
 
 /**
- * Keep the orb anchored correctly as the display setup changes while it's
- * visible — an external monitor gets connected/disconnected, resolution or
- * arrangement changes, etc. (Moving between virtual desktops/Spaces on the
- * same display needs no handling: `setVisibleOnAllWorkspaces` already keeps
- * the window present there without repositioning.) Every place that shows the
- * orb also repositions it to the display under the cursor at that moment, so
- * this only covers changes that happen while it's already on screen.
+ * Notify the caller when the display setup changes — an external monitor
+ * gets connected/disconnected, resolution or arrangement changes, etc.
+ * (Moving between virtual desktops/Spaces on the same display needs no
+ * handling: `setVisibleOnAllWorkspaces` already keeps the window present
+ * there without repositioning.) The caller decides what to do: reposition to
+ * the default corner, or leave a user-dragged position alone if it's still
+ * on-screen (see `isPointOnAnyDisplay`).
  */
-export function watchDisplayChanges(win: BrowserWindow, isExpanded: () => boolean): () => void {
-  const reposition = () => {
-    if (win.isDestroyed() || !win.isVisible()) return;
-    positionOrbTopRight(win, isExpanded());
-  };
-  screen.on("display-added", reposition);
-  screen.on("display-removed", reposition);
-  screen.on("display-metrics-changed", reposition);
+export function watchDisplayChanges(onChange: () => void): () => void {
+  screen.on("display-added", onChange);
+  screen.on("display-removed", onChange);
+  screen.on("display-metrics-changed", onChange);
   return () => {
-    screen.removeListener("display-added", reposition);
-    screen.removeListener("display-removed", reposition);
-    screen.removeListener("display-metrics-changed", reposition);
+    screen.removeListener("display-added", onChange);
+    screen.removeListener("display-removed", onChange);
+    screen.removeListener("display-metrics-changed", onChange);
   };
+}
+
+/** True if the point falls within any connected display's bounds. */
+export function isPointOnAnyDisplay(point: { x: number; y: number }): boolean {
+  return screen.getAllDisplays().some((d) => {
+    const { x, y, width, height } = d.bounds;
+    return point.x >= x && point.x < x + width && point.y >= y && point.y < y + height;
+  });
 }
 
 export function createOrbWindow(): BrowserWindow {

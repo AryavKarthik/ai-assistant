@@ -49,7 +49,7 @@ The app has two distinct windows that share a single renderer bundle:
 
 | Window | Size | Style | Purpose |
 |--------|------|-------|---------|
-| Orb (`orbWin`) | 110×110 mini ↔ 380×520 panel | frameless, transparent, always-on-top (screen-saver level) | Persistent Siri-style corner orb; expands into the chat panel |
+| Orb (`orbWin`) | 96×96 mini ↔ 380×520 panel | frameless, transparent, always-on-top (screen-saver level) | Persistent Siri-style orb, user-draggable; expands into the chat panel |
 | App (`appWin`) | 920×680 | framed, hiddenInset title bar, vibrancy | Settings / Reminders / Memory / Connections tabs |
 
 `src/main.tsx` calls `nova().getWindowMode()` at mount → renders `<App />` (orb) or
@@ -60,7 +60,7 @@ orb window's id: orb → `"orb"`, anything else → `"app"`.
 - **Back to orb**: AppDock home icon → `nova().appClose()` → hides app, shows orb.
 - **Tray**: "Open Nova" menu item creates/shows app window independently.
 
-**Siri-style orb lifecycle**: the orb window (`MiniOrb.tsx`, 110×110 transparent) is **hidden by
+**Siri-style orb lifecycle**: the orb window (`MiniOrb.tsx`, 96×96 transparent) is **hidden by
 default** and only appears when something activates it — never shown just because it finished
 loading (`createOrbWindow` in `window.ts` does not auto-show in dev or prod). Main tracks this
 with `orbArmedForAutoHide` in `main.ts`:
@@ -71,13 +71,35 @@ with `orbArmedForAutoHide` in `main.ts`:
 - **Manual activation** (orb click, `Cmd+Shift+Space`, tray "Open Nova", closing the Settings
   window) → disarms auto-hide and force-shows the window; collapsing afterward only shrinks it
   back to the mini orb, it does not vanish.
-`IpcChannel.OrbSetExpanded(on, manual?)` carries this distinction from the renderer; main
-resizes top-right-anchored via `resizeOrb`/`positionOrbTopRight` (`window.ts`) and broadcasts
-`IpcChannel.OrbExpandedChanged`. `positionOrbTopRight` always targets
-`screen.getDisplayNearestPoint(screen.getCursorScreenPoint())`, so every activation places the
-orb on whichever display the user is actually on; `watchDisplayChanges` (called once on
-`orbWin` in `main.ts`) additionally repositions it live if a monitor is connected/disconnected
-or reconfigured while it's already visible. Voice turns (listening/thinking/speaking/barge-in) **never**
+`IpcChannel.OrbSetExpanded(on, manual?)` carries this distinction from the renderer; when no
+custom position is set, main resizes/positions top-right-anchored via `resizeOrb`/
+`positionOrbTopRight` (`window.ts`) and broadcasts `IpcChannel.OrbExpandedChanged`.
+
+**Dragging**: `MiniOrb.tsx` marks its whole window `WebkitAppRegion: "drag"` (Chromium still
+delivers the underlying mousedown/mouseup to React even inside a drag region, so a movement
+threshold in the component tells a click from a drag) and the expanded panel's icon-button strip
+is a drag region too. `main.ts` listens for the window's native `moved` event to detect *real*
+user drags — `orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events
+our own `positionOrbTopRight`/`resizeOrb`/`setPosition` calls trigger, since Electron fires
+`moved` for programmatic changes too and there's no other way to tell them apart. Once a real
+drag is detected, `orbUserPositioned` flips on and the spot is persisted via
+`electron/orb-position-store.ts` (plain JSON under `userData`, restored on next launch);
+`positionOrb()` becomes a no-op as long as `isPointOnAnyDisplay` says that spot is still on
+some connected display. `watchDisplayChanges` (called once on `orbWin` in `main.ts`) falls back
+to the default top-right corner and clears `orbUserPositioned` if a monitor change leaves the
+saved spot off-screen.
+
+**Jelly wiggle while dragging**: separately from `moved`, `main.ts` also listens to the
+cross-platform `move` event (fires continuously *during* a drag, unlike `moved`) to compute
+live velocity and broadcast it as `IpcChannel.OrbDragVelocity`. `useOrbDragWiggle`
+(`src/hooks/useOrbDragWiggle.ts`) turns that into a squash-and-stretch transform — pure math in
+`velocityToWiggle()` (tested in isolation, no React/DOM needed) stretches the orb along the
+direction of motion and squashes it perpendicular, capped so it can't grow enough to clip its
+window; the hook self-decays back to neutral if no new velocity tick arrives within 140ms. Both
+`MiniOrb.tsx` and the expanded panel's orb (`Orb.tsx`) wrap `VoiceOrb` in a `motion.div` driven
+by this hook with `jellySpring` (`src/motion/springs.ts`) for the bouncy settle.
+
+Voice turns (listening/thinking/speaking/barge-in) **never**
 auto-expand the panel — the orb's own color is the only feedback while it stays a corner orb;
 only a timer notice auto-expands (`hasNotice` effect in `src/App.tsx`), collapsing itself again
 ~2.5s after the notice clears. The reducer's `settle` event ends a turn while keeping the

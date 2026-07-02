@@ -31,10 +31,13 @@ export function TextComposer({ onSend }: TextComposerProps) {
         display: "flex",
         alignItems: "center",
         gap: 8,
-        padding: "8px 12px",
-        background: "rgba(255,255,255,0.05)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        borderRadius: 14,
+        padding: "11px 18px",
+        background: "rgba(255,255,255,0.1)",
+        backdropFilter: "blur(24px) saturate(180%)",
+        WebkitBackdropFilter: "blur(24px) saturate(180%)",
+        border: "1px solid rgba(255,255,255,0.14)",
+        borderRadius: 9999,
+        boxShadow: "0 8px 24px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)",
         margin: "0 12px 12px",
       }}
     >
@@ -49,8 +52,8 @@ export function TextComposer({ onSend }: TextComposerProps) {
           background: "none",
           border: "none",
           outline: "none",
-          color: "rgba(255,255,255,0.88)",
-          fontSize: 14,
+          color: "rgba(255,255,255,0.92)",
+          fontSize: 14.5,
           minWidth: 0,
         }}
       />
@@ -60,11 +63,16 @@ export function TextComposer({ onSend }: TextComposerProps) {
         style={{
           background: text.trim() ? "rgba(10,132,255,0.9)" : "rgba(255,255,255,0.1)",
           border: "none",
-          borderRadius: 8,
+          borderRadius: 9999,
           color: "white",
           cursor: text.trim() ? "pointer" : "default",
           fontSize: 14,
-          padding: "4px 10px",
+          width: 28,
+          height: 28,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
           transition: "background 0.15s",
         }}
       >

@@ -7,7 +7,15 @@ loadEnv({ path: [".env.local", ".env"] });
 
 import { app, BrowserWindow, globalShortcut, ipcMain, Notification } from "electron";
 import { join } from "node:path";
-import { createOrbWindow, createAppWindow, positionOrbTopRight, resizeOrb, watchDisplayChanges } from "./window";
+import {
+  createOrbWindow,
+  createAppWindow,
+  positionOrbTopRight,
+  resizeOrb,
+  watchDisplayChanges,
+  isPointOnAnyDisplay,
+} from "./window";
+import { loadOrbPosition, saveOrbPosition } from "./orb-position-store";
 import { initTimerManager } from "./timers";
 import { createTray } from "./tray";
 import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWindowHandlers } from "./ipc";
@@ -33,6 +41,27 @@ let orbExpanded = false;
 let orbArmedForAutoHide = false;
 let orbHideTimer: ReturnType<typeof setTimeout> | null = null;
 
+// The user can drag the orb anywhere; once they do, we stop forcing it back
+// to the top-right corner and remember where they left it (persisted to
+// disk). `moved` fires for *every* position change though, including our own
+// programmatic ones (positionOrbTopRight/resizeOrb) — `orbMoveIsProgrammatic`
+// suppresses those so only real user drags get treated as "the user chose a
+// spot" and saved.
+let orbUserPositioned = false;
+let orbMoveIsProgrammatic = false;
+
+/** Wrap any programmatic setBounds/setPosition call so the resulting `moved`
+ *  event isn't mistaken for a user drag. */
+function moveOrbProgrammatically(fn: () => void): void {
+  orbMoveIsProgrammatic = true;
+  fn();
+  // Electron delivers `moved` asynchronously; give it a beat to land before
+  // resuming user-drag tracking.
+  setTimeout(() => {
+    orbMoveIsProgrammatic = false;
+  }, 150);
+}
+
 function clearOrbHideTimer(): void {
   if (orbHideTimer) {
     clearTimeout(orbHideTimer);
@@ -54,8 +83,16 @@ function scheduleOrbAutoHide(delayMs: number): void {
 function setOrbExpanded(on: boolean): void {
   if (!orbWin || orbWin.isDestroyed()) return;
   orbExpanded = on;
-  resizeOrb(orbWin, on);
+  moveOrbProgrammatically(() => resizeOrb(orbWin!, on));
   orbWin.webContents.send(IpcChannel.OrbExpandedChanged, on);
+}
+
+/** Positions the orb at the default corner, unless the user has dragged it
+ *  somewhere else and that spot is still on-screen. */
+function positionOrb(expanded: boolean): void {
+  if (!orbWin || orbWin.isDestroyed()) return;
+  if (orbUserPositioned && isPointOnAnyDisplay(orbWin.getBounds())) return;
+  moveOrbProgrammatically(() => positionOrbTopRight(orbWin!, expanded));
 }
 
 /** Shows the orb (mini) for a system-triggered activation — wake word or timer. */
@@ -63,7 +100,7 @@ function activateOrb(): void {
   if (!orbWin || orbWin.isDestroyed()) return;
   clearOrbHideTimer();
   if (!orbWin.isVisible()) {
-    positionOrbTopRight(orbWin, orbExpanded);
+    positionOrb(orbExpanded);
     // showInactive: don't steal focus from whatever the user is doing.
     orbWin.showInactive();
   }
@@ -211,7 +248,7 @@ app.whenReady().then(async () => {
       clearOrbHideTimer();
       orbArmedForAutoHide = false;
       if (on && orbWin && !orbWin.isDestroyed() && !orbWin.isVisible()) {
-        positionOrbTopRight(orbWin, true);
+        positionOrb(true);
         orbWin.show();
       }
     }
@@ -244,7 +281,55 @@ app.whenReady().then(async () => {
   }
   await restoreSession();
   orbWin = createOrbWindow();
-  watchDisplayChanges(orbWin, () => orbExpanded);
+
+  // Restore a previously-dragged position, if it's still on a connected display.
+  const savedPos = loadOrbPosition();
+  if (savedPos && isPointOnAnyDisplay(savedPos)) {
+    moveOrbProgrammatically(() => orbWin!.setPosition(savedPos.x, savedPos.y, false));
+    orbUserPositioned = true;
+  }
+
+  // Real user drags (not our own programmatic repositioning) — persist where
+  // they left it and stop auto-centering it back to the corner. `moved`
+  // (macOS-only) fires once when a drag finishes.
+  orbWin.on("moved", () => {
+    if (orbMoveIsProgrammatic || !orbWin || orbWin.isDestroyed()) return;
+    orbUserPositioned = true;
+    const { x, y } = orbWin.getBounds();
+    saveOrbPosition({ x, y });
+  });
+
+  // `move` (cross-platform) fires continuously *while* dragging — used only
+  // to compute live velocity so the renderer can wiggle the orb like jelly
+  // as it's dragged. Reset the tracking point whenever the window is hidden
+  // or resized/repositioned by us, so a stale gap doesn't get read as motion.
+  let lastMove: { x: number; y: number; t: number } | null = null;
+  orbWin.on("move", () => {
+    if (orbMoveIsProgrammatic || !orbWin || orbWin.isDestroyed()) return;
+    const now = Date.now();
+    const { x, y } = orbWin.getBounds();
+    if (lastMove) {
+      const dt = Math.max(1, now - lastMove.t);
+      orbWin.webContents.send(IpcChannel.OrbDragVelocity, {
+        vx: (x - lastMove.x) / dt,
+        vy: (y - lastMove.y) / dt,
+      });
+    }
+    lastMove = { x, y, t: now };
+  });
+  orbWin.on("hide", () => {
+    lastMove = null;
+  });
+
+  // If a monitor gets connected/disconnected/reconfigured, only reposition
+  // when there's no user-chosen spot, or that spot fell off-screen.
+  watchDisplayChanges(() => {
+    if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return;
+    if (orbUserPositioned && isPointOnAnyDisplay(orbWin.getBounds())) return;
+    orbUserPositioned = false;
+    moveOrbProgrammatically(() => positionOrbTopRight(orbWin!, orbExpanded));
+  });
+
   _trayRef = createTray(orbWin, () => {
     // "Open Nova" tray item callback — manual action, disarm auto-hide.
     clearOrbHideTimer();
@@ -269,7 +354,7 @@ app.whenReady().then(async () => {
     clearOrbHideTimer();
     orbArmedForAutoHide = false;
     if (!orbWin.isVisible()) {
-      positionOrbTopRight(orbWin, true);
+      positionOrb(true);
       orbWin.show();
       setOrbExpanded(true);
       return;

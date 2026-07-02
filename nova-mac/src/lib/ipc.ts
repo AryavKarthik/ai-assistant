@@ -31,6 +31,7 @@ export interface NovaBridge {
   /** manual=true for a real user action (click/hotkey) vs a system-driven change (timer notice). */
   orbSetExpanded(on: boolean, manual?: boolean): void;
   onOrbExpandedChanged(cb: (on: boolean) => void): () => void;
+  onOrbDragVelocity(cb: (p: import("@shared/types").OrbDragVelocityEvent) => void): () => void;
   appOpen(): void;
   appClose(): void;
   onPrefsChanged(cb: (p: unknown) => void): () => void;
