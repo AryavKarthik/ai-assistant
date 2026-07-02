@@ -1,4 +1,13 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  IconAdjustments,
+  IconMicrophone,
+  IconMessageCircle,
+  IconBell,
+  IconSparkles,
+  IconUser,
+  type Icon,
+} from "@tabler/icons-react";
 import { nova } from "../lib/ipc";
 import type { AllPrefs, VoicePreferences, ProactivePrefs, AuthState } from "@shared/types";
 import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS } from "@shared/types";
@@ -121,13 +130,13 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 type SectionId = "general" | "voice" | "conversation" | "sounds" | "proactive" | "account";
 
-const SECTIONS: Array<{ id: SectionId; label: string; icon: string }> = [
-  { id: "general", label: "General", icon: "⚙︎" },
-  { id: "voice", label: "Voice & Speech", icon: "🎙" },
-  { id: "conversation", label: "Conversation", icon: "💬" },
-  { id: "sounds", label: "Sounds", icon: "🔔" },
-  { id: "proactive", label: "Proactive", icon: "✨" },
-  { id: "account", label: "Account", icon: "👤" },
+const SECTIONS: Array<{ id: SectionId; label: string; icon: Icon }> = [
+  { id: "general", label: "General", icon: IconAdjustments },
+  { id: "voice", label: "Voice & Speech", icon: IconMicrophone },
+  { id: "conversation", label: "Conversation", icon: IconMessageCircle },
+  { id: "sounds", label: "Sounds", icon: IconBell },
+  { id: "proactive", label: "Proactive", icon: IconSparkles },
+  { id: "account", label: "Account", icon: IconUser },
 ];
 
 const OPENAI_VOICES = [
@@ -210,7 +219,7 @@ export function SettingsPage() {
               {section === s.id && (
                 <span className="absolute left-1.5 w-1 h-1 rounded-full bg-[--nova-accent]" />
               )}
-              <span className="text-[13px] w-5 text-center opacity-90 pl-1.5">{s.icon}</span>
+              <s.icon size={16} stroke={1.75} className="flex-shrink-0 opacity-85 ml-1.5" />
               {s.label}
             </button>
           ))}
