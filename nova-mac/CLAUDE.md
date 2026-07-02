@@ -49,7 +49,7 @@ The app has two distinct windows that share a single renderer bundle:
 
 | Window | Size | Style | Purpose |
 |--------|------|-------|---------|
-| Orb (`orbWin`) | 480×600 | frameless, always-on-top, vibrancy | Voice orb + text composer |
+| Orb (`orbWin`) | 380×520 | frameless, always-on-top (screen-saver level), vibrancy | Siri-style top-right popup: voice orb + status + text composer |
 | App (`appWin`) | 920×680 | framed, hiddenInset title bar, vibrancy | Settings / Reminders / Memory / Connections tabs |
 
 `src/main.tsx` calls `nova().getWindowMode()` at mount → renders `<App />` (orb) or
@@ -59,6 +59,12 @@ orb window's id: orb → `"orb"`, anything else → `"app"`.
 - **Open app window**: orb ⚙ button → `nova().appOpen()` → hides orb, shows/creates app window.
 - **Back to orb**: AppDock home icon → `nova().appClose()` → hides app, shows orb.
 - **Tray**: "Open Nova" menu item creates/shows app window independently.
+
+**Siri-style popup lifecycle** (`main.ts`): on wake-word fire, `summonOrb(true)` positions the
+orb at the top-right of the display the cursor is on (`positionOrbTopRight` in `window.ts`) and
+`showInactive()`s it (no focus steal). `VoiceTurnEnded` → `scheduleOrbHide()` auto-hides ~1.4s
+later — but only when the orb was summoned by voice; a manual `Cmd+Shift+Space` / tray show
+stays until dismissed. Timer fires also summon the orb (8s auto-hide).
 
 ## The IPC contract (single source of truth)
 
@@ -104,8 +110,8 @@ Web Audio live in the renderer; STT/TTS/chat calls cross IPC to the main process
 the API keys).
 
 ```
-wake word fires (main)  ──IPC WakeDetected──▶  useVoice.runTurn()
-  orb: summon → listening          (earcon plays if instantAckMode === "earcon")
+wake word fires (main)  ──summonOrb + IPC WakeDetected──▶  useVoice.runTurn()
+  orb: summon → listening          (wake cue plays unless instantAckMode === "off")
   recordUntilSilence(stream)       // MediaRecorder until VAD silence (prefs.silenceMs)
   ──IPC transcribe──▶ electron/voice/stt.ts (OpenAI Whisper/gpt-4o-transcribe)
   orb: submit(transcript) → processing
@@ -128,7 +134,27 @@ wake word fires (main)  ──IPC WakeDetected──▶  useVoice.runTurn()
 - **Voice preferences** come from Supabase `user_preferences.voice` (JSONB) merged over
   `DEFAULT_VOICE_PREFERENCES` in `shared/types.ts`. Default interaction mode is `wake_word`.
 - **Error states**: mic unavailable, recording failure, empty transcript, and chat errors all
-  dispatch `{ type: "error", message }` → 2s auto-dismiss (not silent).
+  dispatch `{ type: "error", message }` → 2.5s auto-dismiss (not silent).
+- **Audio cues** (`src/voice/earcon.ts`): oscillator-synthesized cues (`wake`, `gotIt`,
+  `reply`, `bargeIn`, `error`, `timer`) played at each turn stage; gated by
+  `prefs.audioCuesEnabled`.
+- **Tool progress**: main emits `IpcChannel.ChatToolUse` `{requestId, toolName, step}` before
+  each tool round; `useVoice` dispatches `startWorking` so the orb shows the friendly step label
+  (labels in `TOOL_STEP_LABELS`, `electron/chat-turn.ts`). The next `ChatDelta` auto-returns
+  the reducer from `working` to `responding`.
+- **Recording**: `recordUntilSilence` gives up after 6s of no speech (empty blob → "Nothing
+  heard" without an STT round-trip); speech threshold derives from `listeningSensitivity`.
+
+## Mac control tools
+
+`electron/tools/mac-control.ts` (volume via `osascript`, brightness via the optional
+`brightness` CLI with a System Events key-code fallback, `open -a` for apps,
+`shell.openExternal` for URLs — the `electron` import is lazy so vitest can load the module)
+plus `electron/timers.ts` (session-scoped `TimerManager`, initialized in `main.ts` with an
+on-fire callback that shows a Notification, summons the orb, and broadcasts
+`IpcChannel.TimerFired`). Exposed to Claude as: `set_timer` / `list_timers` / `cancel_timer`,
+`open_app` / `quit_app` / `open_url`, `set_system_volume` / `get_system_volume`,
+`set_screen_brightness`.
 
 ## Chat turn — memory + history (`electron/chat.ts`)
 
@@ -147,7 +173,7 @@ Auth-gated. 28 px draggable title bar inset. Tab state via `useState<Tab>`. AppD
 
 | Tab | Page | Main-process module |
 |-----|------|-------------------|
-| Settings | `src/pages/SettingsPage.tsx` | `electron/voice/save-preferences.ts` |
+| Settings | `src/pages/SettingsPage.tsx` (macOS System Settings style: sidebar sections General / Voice & Speech / Conversation / Sounds / Proactive / Account; toggles+selects save immediately, sliders debounce 500ms) | `electron/voice/save-preferences.ts` |
 | Reminders | `src/pages/RemindersPage.tsx` | `electron/memory/reminders.ts` |
 | Memory | `src/pages/MemoryPage.tsx` | `electron/memory/manage.ts` |
 | Connections | `src/pages/ConnectionsPage.tsx` | `electron/google/connections.ts` |

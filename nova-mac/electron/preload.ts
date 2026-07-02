@@ -33,6 +33,16 @@ contextBridge.exposeInMainWorld("nova", {
     ipcRenderer.on(IpcChannel.ChatError, h);
     return () => ipcRenderer.removeListener(IpcChannel.ChatError, h);
   },
+  onChatToolUse: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.ChatToolUse, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ChatToolUse, h);
+  },
+  onTimerFired: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.TimerFired, h);
+    return () => ipcRenderer.removeListener(IpcChannel.TimerFired, h);
+  },
   sendWakeFrame: (buf: ArrayBuffer) => ipcRenderer.send(IpcChannel.WakeAudioFrame, buf),
   setWakeEnabled: (on: boolean) => ipcRenderer.send(IpcChannel.WakeSetEnabled, on),
   onWakeDetected: (cb: () => void): (() => void) => {

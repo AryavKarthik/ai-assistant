@@ -3,24 +3,13 @@ import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { useVoice } from "./hooks/useVoice";
 import { Orb } from "./components/orb/Orb";
-import { TextComposer } from "./components/composer/TextComposer";
 
-function VoiceApp({ email }: { email: string | null }) {
+function VoiceApp() {
   const { state, level } = useVoice();
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column", position: "relative" }}>
-      <div style={{ position: "fixed", top: 8, left: 8, fontSize: 10, opacity: 0.3 }}>
-        {email}
-      </div>
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <Orb
-          state={state}
-          level={level}
-          onExpand={() => nova().appOpen()}
-        />
-      </div>
-      <TextComposer />
+    <div style={{ height: "100%", padding: 8, boxSizing: "border-box" }}>
+      <Orb state={state} level={level} onExpand={() => nova().appOpen()} />
     </div>
   );
 }
@@ -67,5 +56,5 @@ export function App() {
     );
   }
 
-  return <VoiceApp email={auth.email} />;
+  return <VoiceApp />;
 }

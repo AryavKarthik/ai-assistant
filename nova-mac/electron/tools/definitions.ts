@@ -349,6 +349,113 @@ export const TOOL_DEFINITIONS: Tool[] = [
     },
   },
   {
+    name: "set_timer",
+    description:
+      "Set a countdown timer on this Mac. When it fires, the user gets a chime, a macOS notification, and the Nova popup. Use for 'set a timer for 10 minutes', cooking timers, short break timers. For date/time-based tasks use create_reminder instead.",
+    input_schema: {
+      type: "object",
+      properties: {
+        duration_seconds: {
+          type: "integer",
+          description: "Timer length in seconds (e.g. 600 for 10 minutes)",
+        },
+        label: {
+          type: "string",
+          description: "Short label spoken/shown when the timer fires, e.g. 'Pasta'",
+        },
+      },
+      required: ["duration_seconds"],
+    },
+  },
+  {
+    name: "list_timers",
+    description: "List currently running countdown timers with time remaining.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "cancel_timer",
+    description:
+      "Cancel a running countdown timer by id from list_timers, or all timers.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Timer id from list_timers" },
+        all: { type: "boolean", description: "Cancel every running timer" },
+      },
+    },
+  },
+  {
+    name: "open_app",
+    description:
+      "Open (launch or focus) a macOS application by name, e.g. 'Safari', 'Google Chrome', 'Spotify', 'Notes'. Use when the user asks to open a browser or any app.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: {
+          type: "string",
+          description: "Application name as it appears in /Applications",
+        },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "quit_app",
+    description: "Quit a running macOS application by name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "open_url",
+    description:
+      "Open a URL in the user's default browser. Use after web_search when the user wants to view a page, or when they ask to open a specific site.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Full http(s) URL" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "set_system_volume",
+    description:
+      "Set this Mac's output volume (0–100) and/or mute state. Use for 'turn the volume up/down/to 50%', 'mute'. For relative changes, call get_system_volume first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        level: { type: "integer", description: "Output volume 0–100" },
+        muted: { type: "boolean" },
+      },
+    },
+  },
+  {
+    name: "get_system_volume",
+    description: "Get this Mac's current output volume (0–100) and mute state.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_screen_brightness",
+    description:
+      "Set or nudge this Mac's display brightness. Pass level (0.0–1.0) for absolute, or direction up/down for relative. May require the Accessibility permission on first use.",
+    input_schema: {
+      type: "object",
+      properties: {
+        level: { type: "number", description: "Absolute brightness 0.0–1.0" },
+        direction: { type: "string", enum: ["up", "down"] },
+        steps: {
+          type: "integer",
+          description: "Steps for relative change (1–16, default 2)",
+        },
+      },
+    },
+  },
+  {
     name: "fetch_webpage",
     description:
       "Fetch and read the text content of a specific URL. Use after web_search to read a result in detail, or when the user provides a link they want summarized. Returns cleaned page text (up to 3000 chars). An 'Open' button will appear in chat for the user to view the page.",

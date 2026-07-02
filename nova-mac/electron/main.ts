@@ -5,9 +5,10 @@ import { config as loadEnv } from "dotenv";
 // .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
 loadEnv({ path: [".env.local", ".env"] });
 
-import { app, BrowserWindow, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Notification } from "electron";
 import { join } from "node:path";
-import { createOrbWindow, createAppWindow } from "./window";
+import { createOrbWindow, createAppWindow, positionOrbTopRight } from "./window";
+import { initTimerManager } from "./timers";
 import { createTray } from "./tray";
 import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWindowHandlers } from "./ipc";
 import { streamChat, cancelChat } from "./chat";
@@ -19,6 +20,38 @@ let orbWin: BrowserWindow | null = null;
 let appWin: BrowserWindow | null = null;
 // Hold a reference so the tray is not garbage-collected.
 let _trayRef: ReturnType<typeof createTray> | null = null;
+
+// Siri-style popup lifecycle: the orb slides in at the top-right on wake and
+// auto-hides shortly after the turn ends — but only if it was summoned by voice
+// (a manual hotkey/tray show stays until the user dismisses it).
+let orbShownByVoice = false;
+let orbHideTimer: ReturnType<typeof setTimeout> | null = null;
+
+function summonOrb(byVoice: boolean): void {
+  if (!orbWin || orbWin.isDestroyed()) return;
+  if (orbHideTimer) {
+    clearTimeout(orbHideTimer);
+    orbHideTimer = null;
+  }
+  if (!orbWin.isVisible()) {
+    positionOrbTopRight(orbWin);
+    orbShownByVoice = byVoice;
+    // showInactive: don't steal focus from whatever the user is doing.
+    orbWin.showInactive();
+  }
+}
+
+function scheduleOrbHide(delayMs = 1400): void {
+  if (!orbShownByVoice) return;
+  if (orbHideTimer) clearTimeout(orbHideTimer);
+  orbHideTimer = setTimeout(() => {
+    orbHideTimer = null;
+    if (orbShownByVoice && orbWin && !orbWin.isDestroyed()) {
+      orbWin.hide();
+      orbShownByVoice = false;
+    }
+  }, delayMs);
+}
 
 app.dock?.hide(); // no Dock icon — tray-only
 
@@ -124,14 +157,31 @@ app.whenReady().then(async () => {
   const wake = new WakeWordController(modelsDir);
   wake.start(() => {
     wake.pauseForTurn(); // stop ingesting frames during the voice turn
+    summonOrb(true); // Siri-style: pop in at the top-right corner
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IpcChannel.WakeDetected);
   });
   registerWakeBridge({
     pushFrame: (buf) => wake.pushFrame(buf),
     setEnabled: (on) => wake.setEnabled(on),
   });
-  // Resume wake detection once the voice turn completes (Task 12 sends this)
-  ipcMain.on(IpcChannel.VoiceTurnEnded, () => wake.resume());
+  // Resume wake detection once the voice turn completes; tuck the popup away.
+  ipcMain.on(IpcChannel.VoiceTurnEnded, () => {
+    wake.resume();
+    scheduleOrbHide();
+  });
+
+  // Session timers (set via the set_timer tool). On fire: notification + orb popup;
+  // the orb renderer plays the chime and shows/speaks the label.
+  initTimerManager((timer) => {
+    if (Notification.isSupported()) {
+      new Notification({ title: "Timer done", body: timer.label }).show();
+    }
+    summonOrb(true);
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send(IpcChannel.TimerFired, { id: timer.id, label: timer.label });
+    }
+    scheduleOrbHide(8000);
+  });
 
   try {
     const { probeNative } = await import("./native-probe/index.js");
@@ -155,7 +205,14 @@ app.whenReady().then(async () => {
   void _trayRef; // Keep reference to prevent garbage collection
   globalShortcut.register("CommandOrControl+Shift+Space", () => {
     if (!orbWin) return;
-    orbWin.isVisible() ? orbWin.hide() : orbWin.show();
+    if (orbWin.isVisible()) {
+      orbWin.hide();
+      orbShownByVoice = false;
+    } else {
+      positionOrbTopRight(orbWin);
+      orbShownByVoice = false; // manual show: stays until dismissed
+      orbWin.show();
+    }
   });
   orbWin.once("ready-to-show", () => console.log("[nova] orb window ready"));
 });

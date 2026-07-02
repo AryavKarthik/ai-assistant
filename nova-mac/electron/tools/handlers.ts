@@ -21,6 +21,16 @@ import {
 } from "../google/calendar";
 import { searchGmail, getGmailMessage, createGmailDraft } from "../google/gmail";
 import { getCachedTasteProfile, searchYoutube, recommendYoutube } from "../google/youtube";
+import {
+  setSystemVolume,
+  getSystemVolume,
+  setScreenBrightness,
+  nudgeScreenBrightness,
+  openApp,
+  quitApp,
+  openUrl,
+} from "./mac-control";
+import { getTimerManager } from "../timers";
 
 export interface ToolContext {
   userId: string;
@@ -84,6 +94,24 @@ export async function executeTool(
           return handleWebSearch(input);
         case "fetch_webpage":
           return handleFetchWebpage(input);
+        case "set_timer":
+          return handleSetTimer(input);
+        case "list_timers":
+          return handleListTimers();
+        case "cancel_timer":
+          return handleCancelTimer(input);
+        case "open_app":
+          return handleOpenApp(input);
+        case "quit_app":
+          return handleQuitApp(input);
+        case "open_url":
+          return handleOpenUrl(input);
+        case "set_system_volume":
+          return handleSetSystemVolume(input);
+        case "get_system_volume":
+          return getSystemVolume() as Promise<Record<string, unknown>>;
+        case "set_screen_brightness":
+          return handleSetScreenBrightness(input);
         default:
           return { error: `Unknown tool: ${name}` };
       }
@@ -505,6 +533,108 @@ async function handleSearchYoutube(
     duration,
   });
   return result as Record<string, unknown>;
+}
+
+// ─── Mac control ──────────────────────────────────────────────────────────────
+
+function formatRemaining(ms: number): string {
+  const totalSec = Math.max(0, Math.round(ms / 1000));
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min === 0) return `${sec}s`;
+  return sec === 0 ? `${min}m` : `${min}m ${sec}s`;
+}
+
+async function handleSetTimer(input: unknown): Promise<Record<string, unknown>> {
+  const { duration_seconds, label } = input as {
+    duration_seconds?: number;
+    label?: string;
+  };
+  if (!duration_seconds || duration_seconds <= 0) {
+    return { error: "duration_seconds must be a positive integer" };
+  }
+  if (duration_seconds > 24 * 60 * 60) {
+    return { error: "Timers max out at 24 hours — use create_reminder for longer" };
+  }
+  const timer = getTimerManager().set(
+    label?.trim() || "Timer",
+    duration_seconds * 1000,
+  );
+  return {
+    success: true,
+    id: timer.id,
+    label: timer.label,
+    fires_in: formatRemaining(timer.firesAt - Date.now()),
+  };
+}
+
+async function handleListTimers(): Promise<Record<string, unknown>> {
+  const timers = getTimerManager()
+    .list()
+    .map((t) => ({
+      id: t.id,
+      label: t.label,
+      remaining: formatRemaining(t.firesAt - Date.now()),
+    }));
+  return { timers };
+}
+
+async function handleCancelTimer(input: unknown): Promise<Record<string, unknown>> {
+  const { id, all } = input as { id?: string; all?: boolean };
+  if (all) {
+    const count = getTimerManager().cancelAll();
+    return { success: true, cancelled_count: count };
+  }
+  if (!id?.trim()) return { error: "id or all is required" };
+  const ok = getTimerManager().cancel(id.trim());
+  return ok ? { success: true, id } : { error: "Timer not found" };
+}
+
+async function handleOpenApp(input: unknown): Promise<Record<string, unknown>> {
+  const { name } = input as { name?: string };
+  if (!name?.trim()) return { error: "name is required" };
+  await openApp(name.trim());
+  return { success: true, opened: name.trim() };
+}
+
+async function handleQuitApp(input: unknown): Promise<Record<string, unknown>> {
+  const { name } = input as { name?: string };
+  if (!name?.trim()) return { error: "name is required" };
+  await quitApp(name.trim());
+  return { success: true, quit: name.trim() };
+}
+
+async function handleOpenUrl(input: unknown): Promise<Record<string, unknown>> {
+  const { url } = input as { url?: string };
+  if (!url?.trim()) return { error: "url is required" };
+  await openUrl(url.trim());
+  return { success: true, opened: url.trim() };
+}
+
+async function handleSetSystemVolume(input: unknown): Promise<Record<string, unknown>> {
+  const { level, muted } = input as { level?: number; muted?: boolean };
+  if (level === undefined && muted === undefined) {
+    return { error: "level or muted is required" };
+  }
+  const result = await setSystemVolume({ level, muted });
+  return { success: true, ...result };
+}
+
+async function handleSetScreenBrightness(input: unknown): Promise<Record<string, unknown>> {
+  const { level, direction, steps } = input as {
+    level?: number;
+    direction?: "up" | "down";
+    steps?: number;
+  };
+  if (level !== undefined) {
+    const result = await setScreenBrightness(level);
+    return { success: true, ...result };
+  }
+  if (direction === "up" || direction === "down") {
+    const result = await nudgeScreenBrightness(direction, steps ?? 2);
+    return { success: true, direction, ...result };
+  }
+  return { error: "level or direction is required" };
 }
 
 async function handleRecommendYoutube(

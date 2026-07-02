@@ -60,7 +60,7 @@ describe("orbReducer", () => {
   });
 
   it("dismiss: any state → dormant and resets transient fields", () => {
-    const busy: OrbState = { name: "responding", transcript: "x", responseText: "y", workingStep: "z", error: null };
+    const busy: OrbState = { name: "responding", transcript: "x", responseText: "y", workingStep: "z", error: null, notice: null };
     const next = orbReducer(busy, { type: "dismiss" });
     expect(next).toEqual(INITIAL_ORB_STATE);
   });
@@ -73,5 +73,30 @@ describe("orbReducer", () => {
 
   it("ignores summon when not dormant", () => {
     expect(orbReducer(at("processing"), { type: "summon" }).name).toBe("processing");
+  });
+
+  it("responseDelta while working returns to responding and appends", () => {
+    const next = orbReducer(
+      { ...at("working"), workingStep: "Checking your calendar…" },
+      { type: "responseDelta", delta: "You have" },
+    );
+    expect(next.name).toBe("responding");
+    expect(next.workingStep).toBeNull();
+    expect(next.responseText).toBe("You have");
+  });
+
+  it("responseEnd while working returns to dormant (tool-only turn)", () => {
+    expect(orbReducer(at("working"), { type: "responseEnd" }).name).toBe("dormant");
+  });
+
+  it("bargeIn while working resets to bargeIn", () => {
+    expect(orbReducer(at("working"), { type: "bargeIn" }).name).toBe("bargeIn");
+  });
+
+  it("notice shows only while dormant and dismiss clears it", () => {
+    const next = orbReducer(at("dormant"), { type: "notice", message: "Timer done — Pasta" });
+    expect(next.notice).toBe("Timer done — Pasta");
+    expect(orbReducer(at("listening"), { type: "notice", message: "x" }).notice).toBeNull();
+    expect(orbReducer(next, { type: "dismiss" })).toEqual(INITIAL_ORB_STATE);
   });
 });

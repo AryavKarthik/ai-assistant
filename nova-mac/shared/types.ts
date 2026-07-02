@@ -21,6 +21,9 @@ export enum IpcChannel {
   ChatDone = "chat:done",
   ChatError = "chat:error",
   ChatCancel = "chat:cancel",
+  ChatToolUse = "chat:toolUse",
+  // Timers (main-process timer manager)
+  TimerFired = "timer:fired",
   // Window management
   GetWindowMode = "window:get-mode",
   AppOpen = "app:open",
@@ -102,6 +105,18 @@ export interface ChatStreamError {
   requestId: string;
   message: string;
 }
+/** Emitted when Claude starts running a tool mid-turn so the UI can show progress. */
+export interface ChatToolUseEvent {
+  requestId: string;
+  toolName: string;
+  /** Human-friendly step label, e.g. "Checking your calendar…". */
+  step: string;
+}
+
+export interface TimerFiredEvent {
+  id: string;
+  label: string;
+}
 
 export interface TranscribeRequest {
   /** base64-encoded audio bytes. */
@@ -149,6 +164,8 @@ export interface VoicePreferences {
   bargeInSensitivity: number;
   instantAck: boolean;
   instantAckMode: "off" | "earcon" | "spoken";
+  /** Master switch for UI sound cues (wake, thinking, error, timer). */
+  audioCuesEnabled: boolean;
   listeningSensitivity: number;
   wakeWordSensitivity: number;
   wakePhrases: string[];
@@ -219,14 +236,15 @@ export interface MemoryItem {
 export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   interactionMode: "wake_word",
   autoSendOnEndOfTurn: true,
-  silenceMs: 1500,
+  silenceMs: 900,
   spokenReplies: true,
   bargeInEnabled: true,
   bargeInSilenceMs: 1400,
   bargeInAbortMs: 3000,
   bargeInSensitivity: 0.45,
-  instantAck: false,
+  instantAck: true,
   instantAckMode: "earcon",
+  audioCuesEnabled: true,
   listeningSensitivity: 0.55,
   wakeWordSensitivity: 0.5,
   wakePhrases: ["hey jarvis"],

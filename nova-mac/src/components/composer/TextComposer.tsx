@@ -32,7 +32,7 @@ export function TextComposer({ onSend }: TextComposerProps) {
         background: "rgba(255,255,255,0.05)",
         border: "1px solid rgba(255,255,255,0.1)",
         borderRadius: 14,
-        margin: "0 16px 16px",
+        margin: "0 12px 12px",
       }}
     >
       <input

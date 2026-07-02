@@ -11,6 +11,8 @@ export type VoiceVisualMode =
 interface VoiceOrbProps {
   visualMode: VoiceVisualMode;
   audioLevel: number;
+  /** Displayed size in px (canvas renders at 2x for retina). Default 200. */
+  size?: number;
 }
 
 const PALETTES: Record<
@@ -61,7 +63,7 @@ const PALETTES: Record<
   },
 };
 
-export const VoiceOrb = memo(function VoiceOrb({ visualMode, audioLevel }: VoiceOrbProps) {
+export const VoiceOrb = memo(function VoiceOrb({ visualMode, audioLevel, size = 200 }: VoiceOrbProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const levelRef = useRef(audioLevel);
   const modeRef = useRef(visualMode);
@@ -148,12 +150,12 @@ export const VoiceOrb = memo(function VoiceOrb({ visualMode, audioLevel }: Voice
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        width: 200,
-        height: 200,
+        width: size,
+        height: size,
       }}
       aria-hidden
     >
-      <canvas ref={canvasRef} width={400} height={400} style={{ width: 200, height: 200 }} />
+      <canvas ref={canvasRef} width={size * 2} height={size * 2} style={{ width: size, height: size }} />
     </div>
   );
 });

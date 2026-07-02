@@ -6,6 +6,8 @@ export interface OrbState {
   responseText: string;
   workingStep: string | null;
   error: string | null;
+  /** Transient announcement (e.g. a timer firing) shown without a voice turn. */
+  notice: string | null;
 }
 
 export type OrbEvent =
@@ -19,6 +21,7 @@ export type OrbEvent =
   | { type: "workingStep"; step: string }
   | { type: "stop" }
   | { type: "dismiss" }
+  | { type: "notice"; message: string }
   | { type: "error"; message: string };
 
 export const INITIAL_ORB_STATE: OrbState = {
@@ -27,6 +30,7 @@ export const INITIAL_ORB_STATE: OrbState = {
   responseText: "",
   workingStep: null,
   error: null,
+  notice: null,
 };
 
 export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
@@ -42,36 +46,52 @@ export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
         : state;
 
     case "responseStart":
-      return state.name === "processing"
-        ? { ...state, name: "responding", responseText: "" }
+      return state.name === "processing" || state.name === "working"
+        ? { ...state, name: "responding", workingStep: null, responseText: "" }
         : state;
 
     case "responseDelta":
+      // Tool finished and text resumed — leave "working" automatically.
+      if (state.name === "working") {
+        return {
+          ...state,
+          name: "responding",
+          workingStep: null,
+          responseText: state.responseText + event.delta,
+        };
+      }
       return state.name === "responding"
         ? { ...state, responseText: state.responseText + event.delta }
         : state;
 
     case "responseEnd":
-      return state.name === "responding"
+      return state.name === "responding" || state.name === "working"
         ? { ...INITIAL_ORB_STATE, name: "dormant" }
         : state;
 
     case "bargeIn":
-      return state.name === "responding"
+      return state.name === "responding" || state.name === "working"
         ? { ...INITIAL_ORB_STATE, name: "bargeIn" }
         : state;
 
     case "startWorking":
-      return { ...state, name: "working", workingStep: event.step };
+      return state.name === "processing" || state.name === "responding" || state.name === "working"
+        ? { ...state, name: "working", workingStep: event.step }
+        : state;
 
     case "workingStep":
       return state.name === "working" ? { ...state, workingStep: event.step } : state;
 
     case "stop":
-      return state.name === "working" ? { ...state, name: "responding" } : state;
+      return state.name === "working" ? { ...state, name: "responding", workingStep: null } : state;
 
     case "dismiss":
       return INITIAL_ORB_STATE;
+
+    case "notice":
+      return state.name === "dormant"
+        ? { ...INITIAL_ORB_STATE, notice: event.message }
+        : state;
 
     case "error":
       return { ...INITIAL_ORB_STATE, name: "dormant", error: event.message };

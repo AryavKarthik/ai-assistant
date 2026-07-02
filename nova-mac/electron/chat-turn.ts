@@ -30,6 +30,47 @@ const HEAVY_MODEL =
 const MAX_TOOL_ITERATIONS_VOICE = 3;
 const MAX_TOOL_ITERATIONS_TEXT = 10;
 const RETRIEVAL_DEADLINE_MS = 1200;
+const RETRIEVAL_DEADLINE_VOICE_MS = 800;
+
+// Friendly labels shown in the orb while a tool runs.
+const TOOL_STEP_LABELS: Record<string, string> = {
+  save_memory: "Saving that…",
+  search_memory: "Searching memory…",
+  log_workout: "Logging workout…",
+  list_workouts: "Checking workouts…",
+  search_workouts: "Checking workouts…",
+  create_reminder: "Setting reminder…",
+  list_reminders: "Checking reminders…",
+  complete_reminder: "Updating reminders…",
+  complete_all_reminders: "Updating reminders…",
+  delete_reminder: "Updating reminders…",
+  delete_all_reminders: "Updating reminders…",
+  list_calendar_events: "Checking your calendar…",
+  create_calendar_event: "Adding to your calendar…",
+  update_calendar_event: "Updating your calendar…",
+  delete_calendar_event: "Updating your calendar…",
+  search_gmail: "Searching Gmail…",
+  get_gmail_message: "Reading email…",
+  create_gmail_draft: "Drafting email…",
+  get_youtube_taste_profile: "Checking YouTube…",
+  search_youtube: "Searching YouTube…",
+  recommend_youtube: "Finding videos…",
+  web_search: "Searching the web…",
+  fetch_webpage: "Reading page…",
+  set_timer: "Setting timer…",
+  list_timers: "Checking timers…",
+  cancel_timer: "Cancelling timer…",
+  open_app: "Opening app…",
+  quit_app: "Quitting app…",
+  open_url: "Opening page…",
+  set_system_volume: "Adjusting volume…",
+  get_system_volume: "Checking volume…",
+  set_screen_brightness: "Adjusting brightness…",
+};
+
+function toolStepLabel(name: string): string {
+  return TOOL_STEP_LABELS[name] ?? "Working on it…";
+}
 
 let anthropic: Anthropic | null = null;
 function client(): Anthropic {
@@ -107,7 +148,12 @@ export async function streamTurn(
 
     const [history, relevantContext, timezone] = await Promise.all([
       loadLastNMessages(conversationId, plan.chatHistoryLimit),
-      retrieveWithDeadline(userId, transcript, plan, RETRIEVAL_DEADLINE_MS),
+      retrieveWithDeadline(
+        userId,
+        transcript,
+        plan,
+        isVoice ? RETRIEVAL_DEADLINE_VOICE_MS : RETRIEVAL_DEADLINE_MS,
+      ),
       resolveUserTimezoneCached(userId),
     ]);
 
@@ -152,6 +198,14 @@ export async function streamTurn(
           b.type === "tool_use",
       );
       messages.push({ role: "assistant", content: response.content });
+
+      if (toolUseBlocks.length > 0) {
+        emit(IpcChannel.ChatToolUse, {
+          requestId: req.requestId,
+          toolName: toolUseBlocks[0].name,
+          step: toolStepLabel(toolUseBlocks[0].name),
+        });
+      }
 
       const toolResults = await Promise.all(
         toolUseBlocks.map(async (block) => ({
