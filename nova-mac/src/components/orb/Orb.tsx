@@ -17,30 +17,16 @@ function toVisualMode(name: OrbStateName): VoiceVisualMode {
   }
 }
 
-function statusLabel(state: OrbState): string {
-  if (state.error) return state.error;
-  if (state.notice) return state.notice;
-  switch (state.name) {
-    case "listening": return "Listening…";
-    case "processing": return "Thinking…";
-    case "working": return state.workingStep ?? "Working on it…";
-    case "responding": return "Speaking";
-    case "bargeIn": return "Go ahead — listening";
-    default: return "Say “Hey Jarvis”";
-  }
+// Only surface text for things sound cues alone can't explain (an actual
+// error, or a timer notice). No routine "Say Hey Jarvis" / "Listening…" /
+// "Thinking…" captions — the orb's own color is that feedback now.
+function noticeText(state: OrbState): string | null {
+  return state.error ?? state.notice ?? null;
 }
 
-function statusTone(state: OrbState): string {
+function noticeTone(state: OrbState): string {
   if (state.error) return "rgba(255, 120, 120, 0.95)";
-  if (state.notice) return "rgba(255, 214, 130, 0.95)";
-  switch (state.name) {
-    case "listening": return "rgba(147, 197, 253, 0.95)";
-    case "bargeIn": return "rgba(251, 191, 36, 0.95)";
-    case "processing":
-    case "working": return "rgba(196, 181, 253, 0.95)";
-    case "responding": return "rgba(110, 231, 183, 0.95)";
-    default: return "rgba(255, 255, 255, 0.4)";
-  }
+  return "rgba(255, 214, 130, 0.95)";
 }
 
 interface OrbProps {
@@ -57,6 +43,7 @@ export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
   const visualMode = toVisualMode(state.name);
   const active = state.name !== "dormant";
   const scrollRef = useRef<HTMLDivElement>(null);
+  const notice = noticeText(state);
 
   // Keep the newest streamed text in view.
   useEffect(() => {
@@ -67,6 +54,9 @@ export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
     <motion.div
       // Grows from the top-right corner, where the mini orb was sitting —
       // reads as the orb itself expanding, not a separate window sliding in.
+      // No background/border/shadow at all — the window underneath is fully
+      // transparent, so this is the orb and its content floating directly on
+      // the desktop, same as the collapsed mini orb.
       initial={{ opacity: 0, scale: 0.55 }}
       animate={{ opacity: 1, scale: 1 }}
       exit={{ opacity: 0, scale: 0.6 }}
@@ -75,15 +65,8 @@ export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        borderRadius: 28,
-        overflow: "hidden",
         boxSizing: "border-box",
         transformOrigin: "top right",
-        background: "rgb(14 14 16 / 66%)",
-        backdropFilter: "blur(46px) saturate(190%)",
-        WebkitBackdropFilter: "blur(46px) saturate(190%)",
-        boxShadow:
-          "inset 0 1px 0 rgb(255 255 255 / 10%), 0 20px 60px rgb(0 0 0 / 45%), 0 0 0 0.5px rgb(255 255 255 / 8%)",
       }}
     >
       {/* Drag strip + minimal icon controls (no visible app chrome, like Siri) */}
@@ -157,7 +140,7 @@ export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
         </button>
       </div>
 
-      {/* Orb + status */}
+      {/* Orb + (only when there's something worth reading) a notice */}
       <div
         style={{
           display: "flex",
@@ -174,32 +157,23 @@ export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
           <VoiceOrb visualMode={visualMode} audioLevel={level} size={148} />
         </motion.div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={statusLabel(state)}
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15 }}
-            style={{
-              fontSize: 13,
-              fontWeight: 500,
-              color: statusTone(state),
-              minHeight: 18,
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-          >
-            {(state.name === "processing" || state.name === "working") && (
-              <motion.span
-                animate={{ opacity: [0.3, 1, 0.3] }}
-                transition={{ duration: 1.1, repeat: Infinity }}
-                style={{ display: "inline-block", width: 6, height: 6, borderRadius: 3, background: "currentColor" }}
-              />
-            )}
-            {statusLabel(state)}
-          </motion.div>
+        <AnimatePresence>
+          {notice && (
+            <motion.div
+              initial={{ opacity: 0, y: 4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -4 }}
+              transition={{ duration: 0.15 }}
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                color: noticeTone(state),
+                minHeight: 18,
+              }}
+            >
+              {notice}
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
 
