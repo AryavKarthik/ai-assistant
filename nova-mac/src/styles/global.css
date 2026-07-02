@@ -1,5 +1,6 @@
+/* Tailwind v4 uses a single @import — the old v3 @tailwind base/components/
+   utilities directives are not recognized by @tailwindcss/postcss and were
+   silently producing almost no output (every Tailwind utility class in the
+   app was a no-op, which is why panels rendered as unstyled default HTML). */
+@import "tailwindcss";
 @import "./glass.css";
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;

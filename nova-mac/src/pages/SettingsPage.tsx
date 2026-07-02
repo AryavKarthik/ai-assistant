@@ -5,7 +5,7 @@ import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS } from "@shared/type
 import { Select } from "../components/ui/Select";
 import { cn } from "../lib/utils";
 
-// ─── macOS-style building blocks ─────────────────────────────────────────────
+// ─── Pill-style building blocks ──────────────────────────────────────────────
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -14,24 +14,26 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       aria-checked={value}
       onClick={() => onChange(!value)}
       className={cn(
-        "relative w-[38px] h-[22px] rounded-full transition-colors duration-200 flex-shrink-0",
-        value ? "bg-[--nova-accent]" : "bg-white/20",
+        "relative w-[40px] h-[23px] rounded-full transition-colors duration-200 flex-shrink-0",
+        value ? "bg-[--nova-accent]" : "bg-white/[0.12]",
       )}
     >
       <span
         className={cn(
-          "absolute top-[2px] left-[2px] w-[18px] h-[18px] rounded-full bg-white shadow-sm",
-          "transition-transform duration-200",
-          value ? "translate-x-4" : "translate-x-0",
+          "absolute top-[2.5px] left-[2.5px] w-[18px] h-[18px] rounded-full bg-white",
+          "shadow-[0_1px_3px_rgb(0_0_0_/_35%)] transition-transform duration-200 ease-out",
+          value ? "translate-x-[17px]" : "translate-x-0",
         )}
       />
     </button>
   );
 }
 
+// Soft layered card — low-contrast border, tinted surface, generous radius.
+// Rows inside separate with faint tinted dividers instead of hard 1px lines.
 function Group({ children }: { children: React.ReactNode }) {
   return (
-    <div className="rounded-xl border border-white/8 bg-white/[0.04] divide-y divide-white/6 overflow-hidden">
+    <div className="rounded-[22px] border border-white/[0.05] bg-white/[0.035] divide-y divide-white/[0.045] overflow-hidden shadow-[0_1px_0_rgb(255_255_255_/_3%)_inset]">
       {children}
     </div>
   );
@@ -47,16 +49,16 @@ function Row({
   children?: React.ReactNode;
 }) {
   return (
-    <div className="flex items-center justify-between gap-4 px-4 py-3">
+    <div className="flex items-center justify-between gap-6 px-5 py-4">
       <div className="min-w-0">
-        <div className="text-[13px] text-[--nova-text]">{label}</div>
+        <div className="text-[13.5px] font-medium text-[--nova-text]">{label}</div>
         {description && (
-          <div className="text-[11.5px] leading-snug text-[--nova-text-secondary] mt-0.5">
+          <div className="text-[12px] leading-relaxed text-[--nova-text-secondary] mt-1 max-w-md">
             {description}
           </div>
         )}
       </div>
-      <div className="flex-shrink-0 flex items-center gap-2">{children}</div>
+      <div className="flex-shrink-0 flex items-center gap-2.5">{children}</div>
     </div>
   );
 }
@@ -82,7 +84,7 @@ function SliderRow({
 }) {
   return (
     <Row label={label} description={description}>
-      <span className="text-[12px] tabular-nums text-[--nova-text-secondary] w-12 text-right">
+      <span className="text-[11.5px] tabular-nums text-[--nova-text-secondary] w-11 text-right">
         {format ? format(value) : value.toFixed(2)}
       </span>
       <input
@@ -92,7 +94,7 @@ function SliderRow({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-36 accent-[--nova-accent]"
+        className="nova-slider w-32"
       />
     </Row>
   );
@@ -100,16 +102,16 @@ function SliderRow({
 
 function SectionTitle({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="mb-4">
-      <h1 className="text-[17px] font-semibold text-[--nova-text]">{title}</h1>
-      {subtitle && <p className="text-[12px] text-[--nova-text-secondary] mt-0.5">{subtitle}</p>}
+    <div className="mb-5 px-1">
+      <h1 className="text-[19px] font-semibold tracking-tight text-[--nova-text]">{title}</h1>
+      {subtitle && <p className="text-[12.5px] text-[--nova-text-secondary] mt-1">{subtitle}</p>}
     </div>
   );
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="px-1 pt-5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[--nova-text-secondary]">
+    <div className="px-2 pt-7 pb-2 text-[10.5px] font-semibold uppercase tracking-widest text-[--nova-text-secondary]/70">
       {children}
     </div>
   );
@@ -192,20 +194,23 @@ export function SettingsPage() {
   return (
     <div className="flex h-full max-w-3xl mx-auto pt-4">
       {/* Sidebar */}
-      <nav className="w-44 flex-shrink-0 pr-4">
-        <div className="space-y-0.5">
+      <nav className="w-48 flex-shrink-0 pr-5">
+        <div className="space-y-1">
           {SECTIONS.map((s) => (
             <button
               key={s.id}
               onClick={() => setSection(s.id)}
               className={cn(
-                "w-full flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+                "relative w-full flex items-center gap-2.5 rounded-full px-3.5 py-2 text-left text-[13px] transition-all",
                 section === s.id
-                  ? "bg-[--nova-accent] text-white"
-                  : "text-[--nova-text] hover:bg-white/6",
+                  ? "bg-white/[0.09] text-[--nova-text] shadow-[0_0_0_1px_rgb(255_255_255_/_6%),0_2px_10px_rgb(0_0_0_/_25%)]"
+                  : "text-[--nova-text-secondary] hover:bg-white/[0.04] hover:text-[--nova-text]",
               )}
             >
-              <span className="text-[13px] w-5 text-center opacity-90">{s.icon}</span>
+              {section === s.id && (
+                <span className="absolute left-1.5 w-1 h-1 rounded-full bg-[--nova-accent]" />
+              )}
+              <span className="text-[13px] w-5 text-center opacity-90 pl-1.5">{s.icon}</span>
               {s.label}
             </button>
           ))}
@@ -248,7 +253,7 @@ export function SettingsPage() {
                     <span className="text-[12px] text-[--nova-text-secondary]">Always on</span>
                   </Row>
                   <Row label="Keyboard shortcut" description="Toggle the popup manually.">
-                    <kbd className="rounded-md border border-white/12 bg-white/6 px-2 py-1 text-[11px] text-[--nova-text-secondary]">
+                    <kbd className="rounded-full border border-white/[0.08] bg-white/[0.06] px-3 py-1.5 text-[11px] font-medium tracking-wide text-[--nova-text-secondary]">
                       ⌘ ⇧ Space
                     </kbd>
                   </Row>
@@ -420,7 +425,7 @@ export function SettingsPage() {
                         type="time"
                         value={proactive.briefTimeLocal}
                         onChange={(e) => save(undefined, { briefTimeLocal: e.target.value })}
-                        className="rounded-lg border border-white/10 bg-white/6 px-2 py-1 text-sm text-[--nova-text]"
+                        className="rounded-full border border-white/[0.06] bg-white/[0.06] px-3 py-1.5 text-[12.5px] text-[--nova-text]"
                       />
                     </Row>
                   )}
@@ -433,14 +438,14 @@ export function SettingsPage() {
                         type="time"
                         value={proactive.quietHoursStart}
                         onChange={(e) => save(undefined, { quietHoursStart: e.target.value })}
-                        className="rounded-lg border border-white/10 bg-white/6 px-2 py-1 text-[--nova-text]"
+                        className="rounded-full border border-white/[0.06] bg-white/[0.06] px-3 py-1.5 text-[12.5px] text-[--nova-text]"
                       />
                       <span className="text-[--nova-text-secondary]">–</span>
                       <input
                         type="time"
                         value={proactive.quietHoursEnd}
                         onChange={(e) => save(undefined, { quietHoursEnd: e.target.value })}
-                        className="rounded-lg border border-white/10 bg-white/6 px-2 py-1 text-[--nova-text]"
+                        className="rounded-full border border-white/[0.06] bg-white/[0.06] px-3 py-1.5 text-[12.5px] text-[--nova-text]"
                       />
                     </div>
                   </Row>
@@ -460,7 +465,7 @@ export function SettingsPage() {
                   <Row label="Sign out" description="You'll need a new magic link to sign back in.">
                     <button
                       onClick={() => void nova().authSignOut()}
-                      className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-[12.5px] text-red-300 hover:bg-red-500/20 transition-colors"
+                      className="rounded-full border border-red-400/20 bg-red-500/[0.08] px-4 py-1.5 text-[12.5px] font-medium text-red-300/90 hover:bg-red-500/[0.15] hover:text-red-200 transition-colors"
                     >
                       Sign out…
                     </button>
@@ -471,10 +476,29 @@ export function SettingsPage() {
           </div>
 
           {/* Save indicator */}
-          <div className="w-20 text-right text-[11.5px] text-[--nova-text-secondary] pt-1.5 flex-shrink-0">
-            {saveState === "saving" && "Saving…"}
-            {saveState === "saved" && <span className="text-emerald-400">Saved ✓</span>}
-            {saveState === "error" && <span className="text-red-400">Save failed</span>}
+          <div className="w-24 flex justify-end pt-1 flex-shrink-0">
+            {saveState !== "idle" && (
+              <span
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                  saveState === "saving" && "bg-white/[0.06] text-[--nova-text-secondary]",
+                  saveState === "saved" && "bg-emerald-400/10 text-emerald-300",
+                  saveState === "error" && "bg-red-400/10 text-red-300",
+                )}
+              >
+                <span
+                  className={cn(
+                    "w-1.5 h-1.5 rounded-full",
+                    saveState === "saving" && "bg-white/40 animate-pulse",
+                    saveState === "saved" && "bg-emerald-400",
+                    saveState === "error" && "bg-red-400",
+                  )}
+                />
+                {saveState === "saving" && "Saving"}
+                {saveState === "saved" && "Saved"}
+                {saveState === "error" && "Failed"}
+              </span>
+            )}
           </div>
         </div>
       </div>

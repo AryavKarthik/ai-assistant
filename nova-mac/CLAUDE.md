@@ -235,10 +235,23 @@ Google OAuth 2.0 client at console.cloud.google.com. Requires `GOOGLE_CLIENT_ID`
 
 - **Tailwind v4** via `@tailwindcss/postcss` (not the v3 direct plugin). Config in
   `tailwind.config.ts`; PostCSS in `postcss.config.cjs` (`.cjs` because `"type":"module"`).
+  `src/styles/global.css` must use the v4 `@import "tailwindcss";` directive — the old v3
+  `@tailwind base/components/utilities` at-rules are **silently no-ops** under
+  `@tailwindcss/postcss` (no build error, just almost no CSS output), which is exactly what
+  happened once and made every Tailwind-classed component render as unstyled default HTML
+  while inline-styled components (which don't depend on Tailwind) looked fine. If a page ever
+  looks suspiciously plain/unstyled again, check this first before assuming it's a design issue.
 - **CSS tokens** in `src/styles/glass.css`: `--nova-bg`, `--nova-surface`, `--nova-border`,
-  `--nova-text`, `--nova-text-secondary`, `--nova-accent`, `--nova-radius-card`, `.nova-glass`.
-- **UI primitives**: `src/components/ui/Button.tsx`, `Card.tsx`, `Select.tsx`.
+  `--nova-text`, `--nova-text-secondary`, `--nova-accent`, `--nova-radius-card`, `.nova-glass`,
+  `.nova-slider` (pill-track range input styling used by Settings sliders).
+- **UI primitives**: `src/components/ui/Button.tsx`, `Card.tsx`, `Select.tsx` (pill-shaped,
+  `rounded-full`, with a custom chevron since it uses `appearance-none`).
 - **`cn()`** helper in `src/lib/utils.ts` (clsx + tailwind-merge).
+- **Settings page** (`src/pages/SettingsPage.tsx`) uses a black/grey pill design language:
+  `rounded-full` sidebar nav with a soft `bg-white/[0.09]` highlight + small accent dot for the
+  active section (not a solid accent fill), `Group` cards at `rounded-[22px]` with a low-contrast
+  border and faint tinted row dividers instead of hard 1px lines, and pill-shaped selects/kbd
+  chips/time inputs/buttons throughout.
 
 ## Wake word pipeline (openWakeWord, "Hey Jarvis")
 

@@ -26,3 +26,34 @@
 .nova-orb {
   border-radius: 9999px;
 }
+
+/* Pill-track range sliders for Settings — Chromium's default range input is a
+   thin native rail; this gives it a soft grey pill track with an accent thumb
+   that matches the rest of the black/grey UI. */
+.nova-slider {
+  appearance: none;
+  -webkit-appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 12%);
+  outline: none;
+  cursor: pointer;
+}
+.nova-slider::-webkit-slider-thumb {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--nova-accent);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%), 0 0 0 3px rgb(10 132 255 / 18%);
+  transition: box-shadow 0.15s;
+}
+.nova-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 1px 3px rgb(0 0 0 / 40%), 0 0 0 5px rgb(10 132 255 / 22%);
+}
+.nova-slider::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: transparent;
+}
