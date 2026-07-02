@@ -49,9 +49,11 @@ interface OrbProps {
   onSummon?: () => void;
   onStop?: () => void;
   onExpand?: () => void;
+  onCollapse?: () => void;
+  onSend?: (text: string) => void;
 }
 
-export function Orb({ state, level, onExpand }: OrbProps) {
+export function Orb({ state, level, onExpand, onCollapse, onSend }: OrbProps) {
   const visualMode = toVisualMode(state.name);
   const active = state.name !== "dormant";
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -63,56 +65,95 @@ export function Orb({ state, level, onExpand }: OrbProps) {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -12, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      // Grows from the top-right corner, where the mini orb was sitting —
+      // reads as the orb itself expanding, not a separate window sliding in.
+      initial={{ opacity: 0, scale: 0.55 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.6 }}
       transition={appleSpring}
-      className="nova-glass"
       style={{
         display: "flex",
         flexDirection: "column",
         height: "100%",
-        borderRadius: 24,
+        borderRadius: 28,
         overflow: "hidden",
         boxSizing: "border-box",
+        transformOrigin: "top right",
+        background: "rgb(14 14 16 / 66%)",
+        backdropFilter: "blur(46px) saturate(190%)",
+        WebkitBackdropFilter: "blur(46px) saturate(190%)",
+        boxShadow:
+          "inset 0 1px 0 rgb(255 255 255 / 10%), 0 20px 60px rgb(0 0 0 / 45%), 0 0 0 0.5px rgb(255 255 255 / 8%)",
       }}
     >
-      {/* Drag strip + settings */}
+      {/* Drag strip + minimal icon controls (no visible app chrome, like Siri) */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 12px 0",
+          justifyContent: "flex-end",
+          gap: 4,
+          padding: "10px 10px 0",
           WebkitAppRegion: "drag",
         } as React.CSSProperties}
       >
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: 0.6,
-            textTransform: "uppercase",
-            color: "rgba(255,255,255,0.35)",
-          }}
-        >
-          Nova
-        </div>
         <button
           onClick={onExpand}
-          title="Open Nova"
+          title="Open Nova settings"
           style={{
             WebkitAppRegion: "no-drag",
-            background: "rgba(255,255,255,0.07)",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            color: "rgba(255,255,255,0.55)",
+            background: "transparent",
+            border: "none",
+            borderRadius: 999,
+            color: "rgba(255,255,255,0.4)",
             cursor: "pointer",
             fontSize: 13,
-            padding: "3px 8px",
-            lineHeight: 1,
+            width: 24,
+            height: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "background 0.15s, color 0.15s",
           } as React.CSSProperties}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+            e.currentTarget.style.color = "rgba(255,255,255,0.75)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+          }}
         >
           ⚙
+        </button>
+        <button
+          onClick={onCollapse}
+          title="Collapse to orb"
+          style={{
+            WebkitAppRegion: "no-drag",
+            background: "transparent",
+            border: "none",
+            borderRadius: 999,
+            color: "rgba(255,255,255,0.4)",
+            cursor: "pointer",
+            fontSize: 13,
+            width: 24,
+            height: 24,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            transition: "background 0.15s, color 0.15s",
+          } as React.CSSProperties}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+            e.currentTarget.style.color = "rgba(255,255,255,0.75)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "rgba(255,255,255,0.4)";
+          }}
+        >
+          ▴
         </button>
       </div>
 
@@ -123,7 +164,7 @@ export function Orb({ state, level, onExpand }: OrbProps) {
           flexDirection: "column",
           alignItems: "center",
           gap: 2,
-          paddingTop: 4,
+          paddingTop: 0,
         }}
       >
         <motion.div
@@ -212,7 +253,7 @@ export function Orb({ state, level, onExpand }: OrbProps) {
         )}
       </div>
 
-      <TextComposer />
+      <TextComposer onSend={onSend} />
     </motion.div>
   );
 }

@@ -49,7 +49,7 @@ The app has two distinct windows that share a single renderer bundle:
 
 | Window | Size | Style | Purpose |
 |--------|------|-------|---------|
-| Orb (`orbWin`) | 380×520 | frameless, always-on-top (screen-saver level), vibrancy | Siri-style top-right popup: voice orb + status + text composer |
+| Orb (`orbWin`) | 110×110 mini ↔ 380×520 panel | frameless, transparent, always-on-top (screen-saver level) | Persistent Siri-style corner orb; expands into the chat panel |
 | App (`appWin`) | 920×680 | framed, hiddenInset title bar, vibrancy | Settings / Reminders / Memory / Connections tabs |
 
 `src/main.tsx` calls `nova().getWindowMode()` at mount → renders `<App />` (orb) or
@@ -60,11 +60,29 @@ orb window's id: orb → `"orb"`, anything else → `"app"`.
 - **Back to orb**: AppDock home icon → `nova().appClose()` → hides app, shows orb.
 - **Tray**: "Open Nova" menu item creates/shows app window independently.
 
-**Siri-style popup lifecycle** (`main.ts`): on wake-word fire, `summonOrb(true)` positions the
-orb at the top-right of the display the cursor is on (`positionOrbTopRight` in `window.ts`) and
-`showInactive()`s it (no focus steal). `VoiceTurnEnded` → `scheduleOrbHide()` auto-hides ~1.4s
-later — but only when the orb was summoned by voice; a manual `Cmd+Shift+Space` / tray show
-stays until dismissed. Timer fires also summon the orb (8s auto-hide).
+**Siri-style orb lifecycle**: the orb window (`MiniOrb.tsx`, 110×110 transparent) is **hidden by
+default** and only appears when something activates it — never shown just because it finished
+loading (`createOrbWindow` in `window.ts` does not auto-show in dev or prod). Main tracks this
+with `orbArmedForAutoHide` in `main.ts`:
+- **System activation** (wake word, timer fire) → `activateOrb()` shows the mini orb and arms
+  auto-hide. Once the voice turn ends (`VoiceTurnEnded`) with the panel still collapsed, or a
+  system-driven collapse lands via `OrbSetExpanded(false)` while still armed, the window is
+  hidden outright (not just shrunk).
+- **Manual activation** (orb click, `Cmd+Shift+Space`, tray "Open Nova", closing the Settings
+  window) → disarms auto-hide and force-shows the window; collapsing afterward only shrinks it
+  back to the mini orb, it does not vanish.
+`IpcChannel.OrbSetExpanded(on, manual?)` carries this distinction from the renderer; main
+resizes top-right-anchored via `resizeOrb`/`positionOrbTopRight` (`window.ts`) and broadcasts
+`IpcChannel.OrbExpandedChanged`. `positionOrbTopRight` always targets
+`screen.getDisplayNearestPoint(screen.getCursorScreenPoint())`, so every activation places the
+orb on whichever display the user is actually on; `watchDisplayChanges` (called once on
+`orbWin` in `main.ts`) additionally repositions it live if a monitor is connected/disconnected
+or reconfigured while it's already visible. Voice turns (listening/thinking/speaking/barge-in) **never**
+auto-expand the panel — the orb's own color is the only feedback while it stays a corner orb;
+only a timer notice auto-expands (`hasNotice` effect in `src/App.tsx`), collapsing itself again
+~2.5s after the notice clears. The reducer's `settle` event ends a turn while keeping the
+conversation text visible in the panel; typed messages go through `useVoice().sendText` (no
+TTS, no barge-in) so replies stream in even when opened manually.
 
 ## The IPC contract (single source of truth)
 
@@ -110,24 +128,37 @@ Web Audio live in the renderer; STT/TTS/chat calls cross IPC to the main process
 the API keys).
 
 ```
-wake word fires (main)  ──summonOrb + IPC WakeDetected──▶  useVoice.runTurn()
+wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.runTurn()
   orb: summon → listening          (wake cue plays unless instantAckMode === "off")
   recordUntilSilence(stream)       // MediaRecorder until VAD silence (prefs.silenceMs)
   ──IPC transcribe──▶ electron/voice/stt.ts (OpenAI Whisper/gpt-4o-transcribe)
+  sanitizeTranscript() + isVoiceStopPhrase()   // drop hallucinated noise / kill words silently
   orb: submit(transcript) → processing
   ──IPC chatSend──▶ electron/chat.ts (Anthropic streaming) ──ChatDelta/Done/Error──▶
-  orb: responseStart → responseDelta…    // text streams into the orb
+  orb: responseStart → responseDelta…    // color/text update, panel stays collapsed unless opened
   VoicePlayer.playStreaming()            // sentence-by-sentence TTS, prefetched
-  barge-in: TtsBargeInListener stops playback + chatCancel + restarts a turn
-  endTurn() ──IPC voiceTurnEnded──▶ main re-arms wake scoring
+  barge-in: TtsBargeInListener stops playback + chatCancel + restarts a turn (orb: bargeIn, orange)
+  endTurn() ──IPC voiceTurnEnded──▶ main re-arms wake scoring, auto-hides the orb if unopened
   (if interactionMode === "conversation": runTurn() instead of endTurn())
 ```
 
 - **Orb UI is a pure reducer**: `src/orb/orb-machine.ts` states: `dormant → listening →
-  processing → responding`, plus `working`/`error`/`bargeIn`. `summon` accepts both `"dormant"`
-  and `"bargeIn"` so barge-in → runTurn works correctly.
-- **Canvas VoiceOrb** (`src/components/orb/VoiceOrb.tsx`): 400×400 canvas (displayed 200×200),
-  6 animated palettes (idle/listening/barge_in/processing/thinking/speaking).
+  processing → responding`, plus `working`/`error`/`bargeIn`. `summon` from `"bargeIn"` stays
+  `"bargeIn"` (not `"listening"`) — `runTurn()` dispatches `bargeIn` then `summon` in the same
+  tick, and React 18 batches both into one render, so resetting to `"listening"` here would
+  make the orange barge-in color never actually paint. `submit` accepts both `"listening"` and
+  `"bargeIn"` so the follow-up utterance after an interrupt still reaches `"processing"`.
+- **Kill words / noise filtering** (`src/voice/stop-phrases.ts`, `transcript-filter.ts`,
+  ported from the web app): every transcript from `recordUntilSilence` is run through
+  `sanitizeTranscript()` in `useVoice.ts` before it ever reaches Claude. An empty result means
+  STT hallucinated on background noise/silence — dropped silently, no sound, no chat call.
+  `isVoiceStopPhrase()` catches dismissals ("stop", "that'll be all", "thank you very much",
+  etc.) — acknowledged with the `gotIt` cue and the turn ends without calling Claude at all.
+- **WebGL VoiceOrb** (`src/components/orb/webgl-voice-orb.ts` + `VoiceOrb.tsx` wrapper): a
+  fluid-noise plasma sphere (ported from a user-supplied reference), 4 color states — idle=grey,
+  thinking=purple, speaking=green, bargein=orange — smoothly lerped (rate 0.22/frame, tuned for
+  snappy but not jarring transitions). `VoiceOrb`'s 6-value `visualMode` collapses onto these 4;
+  `listening` reads as idle. Same external API as the old Canvas2D orb it replaced.
 - **Streaming TTS** (`src/voice/player.ts`): a `SentenceBuffer` chunks the streamed reply into
   sentences; chunks are synthesized ahead (prefetch depth 2) and scheduled gaplessly on a
   Web Audio timeline. `stop()`/barge-in aborts in-flight synth + sources.

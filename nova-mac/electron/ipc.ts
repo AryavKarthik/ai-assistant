@@ -37,6 +37,10 @@ export function registerWindowHandlers(
   orbWindow: () => BrowserWindow | null,
   appWindow: () => BrowserWindow | null,
   createApp: () => BrowserWindow,
+  /** Called when the orb is hidden/shown by this module, so the caller can
+   *  keep its own auto-hide arming state in sync (see main.ts). */
+  onOrbHidden?: () => void,
+  onOrbManualShow?: () => void,
 ): void {
   // GetWindowMode: return "orb" or "app" based on which window sent the request
   ipcMain.handle(IpcChannel.GetWindowMode, (e) => {
@@ -52,6 +56,7 @@ export function registerWindowHandlers(
     }
     const orb = orbWindow();
     orb?.hide();
+    onOrbHidden?.();
     if (app.isVisible()) {
       app.focus();
     } else {
@@ -62,6 +67,9 @@ export function registerWindowHandlers(
   ipcMain.on(IpcChannel.AppClose, () => {
     const app = appWindow();
     app?.hide();
+    // Returning to the orb from Settings is a deliberate user action —
+    // show it manually rather than leaving it hidden.
+    onOrbManualShow?.();
     const orb = orbWindow();
     orb?.show();
   });

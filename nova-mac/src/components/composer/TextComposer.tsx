@@ -12,13 +12,16 @@ export function TextComposer({ onSend }: TextComposerProps) {
   function send() {
     const trimmed = text.trim();
     if (!trimmed) return;
-    const id = `text-${Date.now()}`;
-    nova().chatSend({
-      requestId: id,
-      messages: [{ role: "user", content: trimmed }],
-      inputModality: "text",
-    });
-    onSend?.(trimmed);
+    if (onSend) {
+      // Parent owns the turn (streams the reply into the panel).
+      onSend(trimmed);
+    } else {
+      nova().chatSend({
+        requestId: `text-${Date.now()}`,
+        messages: [{ role: "user", content: trimmed }],
+        inputModality: "text",
+      });
+    }
     setText("");
   }
 

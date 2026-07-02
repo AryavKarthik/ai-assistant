@@ -28,6 +28,10 @@ export enum IpcChannel {
   GetWindowMode = "window:get-mode",
   AppOpen = "app:open",
   AppClose = "app:close",
+  /** Renderer asks main to grow/shrink the orb window (mini orb ↔ chat panel). */
+  OrbSetExpanded = "orb:setExpanded",
+  /** Main broadcasts the orb window's current expanded state. */
+  OrbExpandedChanged = "orb:expandedChanged",
   // Preferences push
   PrefsChanged = "prefs:changed",
   // Prefs get/set (used by Settings tab — wired in Task 7)

@@ -7,6 +7,8 @@ import { TtsBargeInListener, ttsBargeInConfigFromSensitivity } from "../voice/tt
 import { VoicePlayer } from "../voice/player";
 import { startWakeCapture } from "../voice/wake-capture";
 import { playCue } from "../voice/earcon";
+import { sanitizeTranscript } from "../voice/transcript-filter";
+import { isVoiceStopPhrase } from "../voice/stop-phrases";
 import { nova } from "../lib/ipc";
 import { DEFAULT_VOICE_PREFERENCES, type VoicePreferences } from "@shared/types";
 
@@ -92,7 +94,11 @@ async function blobToBase64(blob: Blob): Promise<string> {
   return btoa(bin);
 }
 
-export function useVoice(): { state: OrbState; level: number } {
+export function useVoice(): {
+  state: OrbState;
+  level: number;
+  sendText: (text: string) => void;
+} {
   const [state, dispatch] = useReducer(orbReducer, INITIAL_ORB_STATE);
   const [level, setLevel] = useState(0);
 
@@ -102,6 +108,9 @@ export function useVoice(): { state: OrbState; level: number } {
   const reqId = useRef(0);
   const cleanupTurn = useRef<(() => void) | null>(null);
   const cancelledRef = useRef(false);
+  /** True while any turn (voice or text) is streaming. */
+  const busyRef = useRef(false);
+  const sendTextRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
     cancelledRef.current = false;
@@ -145,7 +154,59 @@ export function useVoice(): { state: OrbState; level: number } {
       setTimeout(() => dispatch({ type: "dismiss" }), 2500);
     }
 
+    // Typed chat turn: no recording, no TTS, no barge-in — just stream the reply
+    // into the panel.
+    function runTextTurn(text: string) {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      cleanupTurn.current?.();
+      cleanupTurn.current = null;
+
+      dispatch({ type: "summon" });
+      dispatch({ type: "submit", transcript: text });
+      dispatch({ type: "responseStart" });
+      const id = `text-${++reqId.current}`;
+
+      const offDelta = nova().onChatDelta((p) => {
+        if (p.requestId !== id) return;
+        dispatch({ type: "responseDelta", delta: p.delta });
+      });
+      const offTool = nova().onChatToolUse?.((p) => {
+        if (p.requestId !== id) return;
+        dispatch({ type: "startWorking", step: p.step });
+      });
+      const offDone = nova().onChatDone((p) => {
+        if (p.requestId !== id) return;
+        cleanup();
+        dispatch({ type: "settle" });
+        busyRef.current = false;
+      });
+      const offErr = nova().onChatError((p) => {
+        if (p.requestId !== id) return;
+        cleanup();
+        showError(p.message ?? "Something went wrong");
+        busyRef.current = false;
+      });
+
+      function cleanup() {
+        offDelta();
+        offTool?.();
+        offDone();
+        offErr();
+        cleanupTurn.current = null;
+      }
+      cleanupTurn.current = cleanup;
+
+      nova().chatSend({
+        requestId: id,
+        messages: [{ role: "user", content: text }],
+        inputModality: "text",
+      });
+    }
+    sendTextRef.current = runTextTurn;
+
     async function runTurn() {
+      busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
 
@@ -217,6 +278,24 @@ export function useVoice(): { state: OrbState; level: number } {
         return;
       }
 
+      // Filter STT hallucinations from background noise/silence ("thanks for
+      // watching", stray "you", etc.) and handle kill phrases ("stop", "that's
+      // all", "thank you very much", ...) before ever calling Claude.
+      const sanitized = sanitizeTranscript(transcript);
+      if (!sanitized) {
+        // Noise, not real speech — drop silently, no sound, no chat call.
+        dispatch({ type: "dismiss" });
+        endTurn();
+        return;
+      }
+      if (isVoiceStopPhrase(sanitized)) {
+        cue("gotIt");
+        dispatch({ type: "dismiss" });
+        endTurn();
+        return;
+      }
+      transcript = sanitized;
+
       dispatch({ type: "submit", transcript });
       dispatch({ type: "responseStart" });
       const id = `turn-${++reqId.current}`;
@@ -249,8 +328,13 @@ export function useVoice(): { state: OrbState; level: number } {
         });
       }
 
+      let firstDelta = true;
       const offDelta = nova().onChatDelta((p) => {
         if (p.requestId !== id) return;
+        if (firstDelta) {
+          firstDelta = false;
+          cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
+        }
         dispatch({ type: "responseDelta", delta: p.delta });
         speaker?.feed(p.delta);
       });
@@ -271,7 +355,7 @@ export function useVoice(): { state: OrbState; level: number } {
           void speaker.finish().then(() => {
             barge.stop();
             if (!bargeInFired) {
-              dispatch({ type: "responseEnd" });
+              dispatch({ type: "settle" });
               if (prefs.current.interactionMode === "conversation") {
                 void runTurn();
               } else {
@@ -282,7 +366,7 @@ export function useVoice(): { state: OrbState; level: number } {
         } else {
           barge.stop();
           if (!bargeInFired) {
-            dispatch({ type: "responseEnd" });
+            dispatch({ type: "settle" });
             if (prefs.current.interactionMode === "conversation") {
               void runTurn();
             } else {
@@ -323,6 +407,7 @@ export function useVoice(): { state: OrbState; level: number } {
 
     function endTurn() {
       setLevel(0);
+      busyRef.current = false;
       nova().voiceTurnEnded();
     }
 
@@ -339,5 +424,9 @@ export function useVoice(): { state: OrbState; level: number } {
     };
   }, []);
 
-  return { state, level };
+  return {
+    state,
+    level,
+    sendText: (text: string) => sendTextRef.current(text),
+  };
 }

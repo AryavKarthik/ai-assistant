@@ -1,15 +1,72 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { useVoice } from "./hooks/useVoice";
 import { Orb } from "./components/orb/Orb";
+import { MiniOrb } from "./components/orb/MiniOrb";
 
 function VoiceApp() {
-  const { state, level } = useVoice();
+  const { state, level, sendText } = useVoice();
+  const [expanded, setExpanded] = useState(false);
+  // True when WE grew the window for a timer notice — that collapses back to
+  // the mini orb on its own. Click-opened panels stay open. Speaking, thinking,
+  // and barge-in never auto-expand — the orb's own color communicates state
+  // (grey/purple/green/orange) while it stays a corner orb.
+  const autoExpandedRef = useRef(false);
+  const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => nova().onOrbExpandedChanged(setExpanded), []);
+
+  const hasNotice = state.notice !== null;
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
+
+  useEffect(() => {
+    if (hasNotice) {
+      if (collapseTimer.current) {
+        clearTimeout(collapseTimer.current);
+        collapseTimer.current = null;
+      }
+      if (!expandedRef.current) {
+        autoExpandedRef.current = true;
+        nova().orbSetExpanded(true); // system-driven: main auto-hides after
+      }
+    } else if (autoExpandedRef.current) {
+      // Give the user a moment to read, then tuck back into the corner
+      // (main hides the whole window once this collapse lands).
+      collapseTimer.current = setTimeout(() => {
+        collapseTimer.current = null;
+        autoExpandedRef.current = false;
+        nova().orbSetExpanded(false);
+      }, 2500);
+    }
+  }, [hasNotice]);
+
+  if (!expanded) {
+    return (
+      <MiniOrb
+        state={state}
+        level={level}
+        onClick={() => {
+          autoExpandedRef.current = false;
+          nova().orbSetExpanded(true, true); // manual: stays open until closed
+        }}
+      />
+    );
+  }
 
   return (
     <div style={{ height: "100%", padding: 8, boxSizing: "border-box" }}>
-      <Orb state={state} level={level} onExpand={() => nova().appOpen()} />
+      <Orb
+        state={state}
+        level={level}
+        onSend={sendText}
+        onCollapse={() => {
+          autoExpandedRef.current = false;
+          nova().orbSetExpanded(false, true); // manual: shrinks, doesn't vanish
+        }}
+        onExpand={() => nova().appOpen()}
+      />
     </div>
   );
 }
@@ -24,6 +81,12 @@ export function App() {
     const unsub = nova().onAuthChanged(setAuth);
     return unsub;
   }, []);
+
+  // The sign-in card needs the full panel visible — force it manually since
+  // the orb window is otherwise hidden until something activates it.
+  useEffect(() => {
+    if (!auth.signedIn) nova().orbSetExpanded(true, true);
+  }, [auth.signedIn]);
 
   if (!auth.signedIn) {
     const sendLink = () => {

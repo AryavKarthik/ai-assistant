@@ -39,8 +39,14 @@ describe("orbReducer", () => {
     expect(next.responseText).toBe("");
   });
 
-  it("summon: bargeIn → listening (re-arm after barge-in)", () => {
-    expect(orbReducer(at("bargeIn"), { type: "summon" }).name).toBe("listening");
+  it("summon: bargeIn → stays bargeIn (orange persists through the follow-up recording)", () => {
+    expect(orbReducer(at("bargeIn"), { type: "summon" }).name).toBe("bargeIn");
+  });
+
+  it("submit: bargeIn → processing (follow-up utterance transcribed)", () => {
+    const next = orbReducer(at("bargeIn"), { type: "submit", transcript: "what about tomorrow" });
+    expect(next.name).toBe("processing");
+    expect(next.transcript).toBe("what about tomorrow");
   });
 
   it("startWorking: → working with a step label", () => {
@@ -91,6 +97,16 @@ describe("orbReducer", () => {
 
   it("bargeIn while working resets to bargeIn", () => {
     expect(orbReducer(at("working"), { type: "bargeIn" }).name).toBe("bargeIn");
+  });
+
+  it("settle: responding → dormant but keeps the conversation text", () => {
+    const busy: OrbState = { ...at("responding"), transcript: "hi", responseText: "hello!" };
+    const next = orbReducer(busy, { type: "settle" });
+    expect(next.name).toBe("dormant");
+    expect(next.transcript).toBe("hi");
+    expect(next.responseText).toBe("hello!");
+    // next summon clears the settled text
+    expect(orbReducer(next, { type: "summon" }).responseText).toBe("");
   });
 
   it("notice shows only while dormant and dismiss clears it", () => {

@@ -53,6 +53,13 @@ contextBridge.exposeInMainWorld("nova", {
   getVoicePreferences: () => ipcRenderer.invoke(IpcChannel.VoiceGetPreferences),
   voiceTurnEnded: () => ipcRenderer.send(IpcChannel.VoiceTurnEnded),
   getWindowMode: (): Promise<string> => ipcRenderer.invoke(IpcChannel.GetWindowMode),
+  orbSetExpanded: (on: boolean, manual?: boolean) =>
+    ipcRenderer.send(IpcChannel.OrbSetExpanded, on, manual),
+  onOrbExpandedChanged: (cb: (on: boolean) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, on: boolean) => cb(on);
+    ipcRenderer.on(IpcChannel.OrbExpandedChanged, h);
+    return () => ipcRenderer.removeListener(IpcChannel.OrbExpandedChanged, h);
+  },
   appOpen: () => ipcRenderer.send(IpcChannel.AppOpen),
   appClose: () => ipcRenderer.send(IpcChannel.AppClose),
   onPrefsChanged: (cb: (p: unknown) => void): (() => void) => {
