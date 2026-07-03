@@ -9,24 +9,49 @@ import { startWakeCapture } from "../voice/wake-capture";
 import { playCue } from "../voice/earcon";
 import { sanitizeTranscript } from "../voice/transcript-filter";
 import { isVoiceStopPhrase } from "../voice/stop-phrases";
+import { SpeechGate } from "../voice/vad";
 import { nova } from "../lib/ipc";
 import { DEFAULT_VOICE_PREFERENCES, type VoicePreferences } from "@shared/types";
 
 // No-speech giveup is configurable (VoicePreferences.noSpeechTimeoutMs,
 // Settings → Conversation) — see recordUntilSilence.
 const MAX_RECORDING_MS = 30_000;
+/** Blobs smaller than this can't contain real speech — treat as silence. */
+const MIN_SPEECH_BLOB_BYTES = 4_000;
 
-/** Map listening sensitivity (0 strict … 1 sensitive) to a speech level threshold. */
+/** Map listening sensitivity (0 strict … 1 sensitive) to the gate's minimum
+ *  speech threshold — the noise-calibrated floor can only raise it. */
 function speechThreshold(sensitivity: number): number {
   const s = Math.max(0, Math.min(1, sensitivity));
   return 0.14 - s * 0.09; // 0.14 (strict) … 0.05 (sensitive)
 }
 
+interface RecordResult {
+  blob: Blob;
+  /** Ambient noise floor measured this turn — remembered by MicSession so the
+   *  next turn starts warm-calibrated. */
+  noiseFloor: number;
+}
+
+/**
+ * Records until the user stops talking, gated by a noise-calibrated
+ * SpeechGate rather than a fixed threshold. The gate measures the room's
+ * ambient level first and requires *sustained* speech-band energy above that
+ * floor before anything counts as speech — a fan, HVAC hum, or a distant TV
+ * no longer trips recording, which was the root of the "randomly replying to
+ * things I'm not saying" behavior (the old fixed threshold treated any noisy
+ * room as nonstop speech).
+ */
 async function recordUntilSilence(
   stream: MediaStream,
-  options: { silenceMs: number; threshold: number; noSpeechTimeoutMs: number },
+  options: {
+    silenceMs: number;
+    threshold: number;
+    noSpeechTimeoutMs: number;
+    initialNoiseFloor?: number;
+  },
   onLevel: (level: number) => void,
-): Promise<Blob> {
+): Promise<RecordResult> {
   const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
     ? "audio/webm;codecs=opus"
     : "audio/webm";
@@ -39,10 +64,19 @@ async function recordUntilSilence(
   mr.start(100);
 
   const analyser = new MicAnalyser();
+  const gate = new SpeechGate({
+    minThreshold: options.threshold,
+    // 260ms of sustained speech confirms — long enough to reject door slams
+    // and keyboard clatter, short enough not to eat the first word.
+    speechHoldMs: 260,
+    initialNoiseFloor: options.initialNoiseFloor,
+    // With a warm floor (idle ambient monitor / previous turn), skip in-gate
+    // calibration — the user is typically already talking when this starts.
+    calibrateMs: options.initialNoiseFloor ? 0 : undefined,
+  });
 
   return new Promise((resolve) => {
     let silenceTimer: ReturnType<typeof setTimeout> | null = null;
-    let speechSeen = false;
     let done = false;
 
     function finish() {
@@ -52,35 +86,37 @@ async function recordUntilSilence(
       clearTimeout(silenceTimer ?? undefined);
       clearTimeout(noSpeechTimer);
       clearTimeout(maxTimer);
+      const blob = new Blob(gate.confirmed ? chunks : [], { type: mimeType });
+      const result: RecordResult = { blob, noiseFloor: gate.getNoiseFloor() };
       // If the user never spoke, resolve empty so the caller can show "Nothing heard"
       // without paying for a pointless STT round-trip.
       if (mr.state !== "inactive") {
-        mr.onstop = () => resolve(new Blob(speechSeen ? chunks : [], { type: mimeType }));
+        mr.onstop = () => resolve(result);
         try {
           mr.requestData();
           mr.stop();
         } catch {
-          resolve(new Blob(speechSeen ? chunks : [], { type: mimeType }));
+          resolve(result);
         }
       } else {
-        resolve(new Blob(speechSeen ? chunks : [], { type: mimeType }));
+        resolve(result);
       }
     }
 
     const noSpeechTimer = setTimeout(() => {
-      if (!speechSeen) finish();
+      if (!gate.confirmed) finish();
     }, options.noSpeechTimeoutMs);
     const maxTimer = setTimeout(finish, MAX_RECORDING_MS);
 
     analyser.start(stream, (level) => {
       onLevel(level);
-      if (level > options.threshold) {
-        speechSeen = true;
+      gate.push(level);
+      if (level >= gate.activeThreshold) {
         if (silenceTimer !== null) {
           clearTimeout(silenceTimer);
           silenceTimer = null;
         }
-      } else if (speechSeen && silenceTimer === null) {
+      } else if (gate.confirmed && silenceTimer === null) {
         silenceTimer = setTimeout(finish, options.silenceMs);
       }
     });
@@ -110,6 +146,9 @@ export function useVoice(): {
   const cancelledRef = useRef(false);
   /** True while any turn (voice or text) is streaming. */
   const busyRef = useRef(false);
+  /** Consecutive noise/empty listens in conversation mode — quietly re-listen
+   *  a couple of times before giving up on the conversation. */
+  const consecutiveNoiseTurns = useRef(0);
   const sendTextRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
@@ -120,12 +159,37 @@ export function useVoice(): {
       if (prefs.current.audioCuesEnabled !== false) playCue(name);
     }
 
+    // Idle ambient monitor: the mic is already open for wake capture, so keep
+    // a rolling measurement of the room's speech-band level while no turn is
+    // running. This is what calibrates listening — SpeechGate starts each turn
+    // from this floor instead of guessing (or worse, calibrating on the user's
+    // own first words).
+    const idleAnalyser = new MicAnalyser();
+    let idleSamples: number[] = [];
+
     async function boot() {
       prefs.current = await nova().getVoicePreferences();
       if (cancelledRef.current) return;
       const stream = await mic.current.acquire();
       if (cancelledRef.current) return;
       stopWake = startWakeCapture(stream, (buf) => nova().sendWakeFrame(buf));
+
+      idleAnalyser.start(stream, (level) => {
+        if (busyRef.current) {
+          // Turn in progress (user speech / TTS): these levels are not ambient.
+          idleSamples = [];
+          return;
+        }
+        idleSamples.push(level);
+        if (idleSamples.length >= 240) {
+          // ~4s of idle audio; take the 60th percentile as the floor — robust
+          // to brief one-off sounds without chasing them.
+          const sorted = [...idleSamples].sort((a, b) => a - b);
+          const floor = sorted[Math.floor(sorted.length * 0.6)] ?? 0;
+          if (floor > 0) mic.current.rememberNoiseFloor(floor);
+          idleSamples = [];
+        }
+      });
     }
     void boot();
 
@@ -243,14 +307,18 @@ export function useVoice(): {
         .sttStreamStart()
         .catch(() => false);
 
-      let audio: Blob;
+      let recording: RecordResult;
       try {
-        audio = await recordUntilSilence(
+        recording = await recordUntilSilence(
           stream,
           {
             silenceMs: prefs.current.silenceMs,
             threshold: speechThreshold(prefs.current.listeningSensitivity),
             noSpeechTimeoutMs: prefs.current.noSpeechTimeoutMs,
+            // Warm calibration: reuse the noise floor measured last turn so
+            // the gate doesn't spend its calibration window re-learning the
+            // same room (and can't be fooled by calibrating mid-sentence).
+            initialNoiseFloor: mic.current.getNoiseFloor() || undefined,
           },
           (l) => setLevel(l),
         );
@@ -260,6 +328,8 @@ export function useVoice(): {
         endTurn();
         return;
       }
+      mic.current.rememberNoiseFloor(recording.noiseFloor);
+      const audio = recording.blob;
       setLevel(0);
       if (cancelledRef.current) {
         nova().sttStreamAbort();
@@ -267,8 +337,20 @@ export function useVoice(): {
         return;
       }
 
-      if (audio.size === 0) {
+      // Too small to be real speech (gate never confirmed, or a split-second
+      // blip): treat as silence. In conversation mode a quiet gap between
+      // exchanges is normal — quietly listen again instead of erroring out of
+      // the conversation.
+      if (audio.size < MIN_SPEECH_BLOB_BYTES) {
         nova().sttStreamAbort();
+        if (
+          prefs.current.interactionMode === "conversation" &&
+          consecutiveNoiseTurns.current < 2
+        ) {
+          consecutiveNoiseTurns.current++;
+          void runTurn();
+          return;
+        }
         showError("Nothing heard");
         endTurn();
         return;
@@ -319,11 +401,21 @@ export function useVoice(): {
       // all", "thank you very much", ...) before ever calling Claude.
       const sanitized = sanitizeTranscript(transcript);
       if (!sanitized) {
-        // Noise, not real speech — drop silently, no sound, no chat call.
+        // Noise, not real speech. In conversation mode, listen again rather
+        // than silently dropping out of the conversation.
+        if (
+          prefs.current.interactionMode === "conversation" &&
+          consecutiveNoiseTurns.current < 2
+        ) {
+          consecutiveNoiseTurns.current++;
+          void runTurn();
+          return;
+        }
         dispatch({ type: "dismiss" });
         endTurn();
         return;
       }
+      consecutiveNoiseTurns.current = 0;
       if (isVoiceStopPhrase(sanitized)) {
         cue("gotIt");
         dispatch({ type: "dismiss" });
@@ -465,6 +557,7 @@ export function useVoice(): {
       offPrefs?.();
       offTimer?.();
       stopWake?.();
+      idleAnalyser.stop();
       cleanupTurn.current?.();
       cleanupTurn.current = null;
       player.current.stop();

@@ -50,18 +50,20 @@ export function startSttStream(): boolean {
 
   const stream = client
     .streamingRecognize({
+      // Keep this config minimal: latest_* models REJECT
+      // alternativeLanguageCodes (and useEnhanced is meaningless for them) —
+      // including either fails the stream instantly with INVALID_ARGUMENT,
+      // which silently forced every turn onto the slow batch fallback.
       config: {
         encoding: "LINEAR16",
         sampleRateHertz: 16000,
         audioChannelCount: 1,
         languageCode: "en-AU",
-        alternativeLanguageCodes: ["en-US", "en-GB"],
         enableAutomaticPunctuation: true,
         // latest_short finalizes segments aggressively — exactly what a
         // low-latency command/chat turn wants; long utterances just produce
         // several finals which we join.
         model: "latest_short",
-        useEnhanced: true,
       },
       interimResults: true,
     })
@@ -83,6 +85,9 @@ export function startSttStream(): boolean {
       }
     })
     .on("error", (err: Error) => {
+      // Loud on purpose: a config/permission error here silently downgrades
+      // every turn to batch STT, which looks like "streaming doesn't work".
+      console.error("[stt-stream] stream error:", err.message);
       s.error = err;
       finish(s);
     })

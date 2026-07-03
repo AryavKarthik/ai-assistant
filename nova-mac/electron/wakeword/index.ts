@@ -3,20 +3,22 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEBOUNCE_MS = 2000;
-const DEFAULT_THRESHOLD = 0.05;
+const DEFAULT_THRESHOLD = 0.5;
 
 /** Map wakeWordSensitivity (0 strict … 1 sensitive) to a fire threshold.
- *  0.5 (the preference default) resolves to DEFAULT_THRESHOLD, so this is a
- *  pure refinement — nobody who never touches the slider sees a behavior
- *  change. Previously this preference was saved but never actually read: the
- *  controller always used the fixed 0.05 default regardless of what the user
- *  configured in Settings, which meant a person whose mic/room made "hey
- *  jarvis" score marginally (e.g. consistently landing around 0.03-0.06) had
- *  no way to fix inconsistent activation — the one knob meant for exactly
- *  that had no effect. */
+ *  0.5 (the preference default) resolves to DEFAULT_THRESHOLD.
+ *
+ *  History: this used to be 0.08…0.02 (default 0.05) — tuned while the wake
+ *  worker still processed frames OUT OF ORDER, which scrambled the model's
+ *  input and crushed every score toward zero, so only a tiny threshold ever
+ *  fired. With inference serialized the engine produces proper openWakeWord
+ *  scores (real activations near 1.0; background speech and noise routinely
+ *  hit 0.05–0.2), and the old thresholds made the orb activate on practically
+ *  anything — the "randomly starts listening" bug. 0.5 is the
+ *  openWakeWord-recommended operating point. */
 export function wakeThresholdFromSensitivity(sensitivity: number): number {
   const s = Math.max(0, Math.min(1, sensitivity));
-  return 0.08 - s * 0.06; // 0.08 (strict) … 0.02 (sensitive)
+  return 0.7 - s * 0.4; // 0.7 (strict) … 0.3 (sensitive)
 }
 
 export class WakeWordController {

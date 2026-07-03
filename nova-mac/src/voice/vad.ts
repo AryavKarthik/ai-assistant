@@ -55,7 +55,17 @@ export class SpeechGate {
     const warmFloor = options?.initialNoiseFloor;
     if (warmFloor != null && warmFloor > 0) {
       this.noiseFloor = warmFloor;
-      this.calibrateMs = Math.min(options?.calibrateMs ?? 450, 150);
+      // calibrateMs: 0 with a warm floor means TRUST it and skip in-gate
+      // calibration entirely. Critical after a wake word: the user is usually
+      // already mid-sentence when the gate starts, so a calibration window
+      // here would learn their speech as "ambient noise", jack the threshold
+      // above their voice, and silently discard the whole utterance.
+      if (options?.calibrateMs === 0) {
+        this.calibrating = false;
+        this.calibrateMs = 0;
+      } else {
+        this.calibrateMs = Math.min(options?.calibrateMs ?? 450, 150);
+      }
     } else {
       this.calibrateMs = options?.calibrateMs ?? 450;
     }
