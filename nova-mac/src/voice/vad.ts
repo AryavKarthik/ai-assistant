@@ -89,7 +89,11 @@ export class SpeechGate {
     return Math.max(this.minThreshold, this.noiseFloor + this.noiseMargin);
   }
 
-  private releaseThreshold(): number {
+  /** Hysteresis level once speech is confirmed: trailing speech naturally
+   *  drops in energy at the end of a sentence, so end-of-utterance detection
+   *  must compare against this, NOT activeThreshold — keying silence off the
+   *  full threshold cuts the user off mid-trail-off. */
+  releaseThreshold(): number {
     return this.activeThreshold * 0.72;
   }
 

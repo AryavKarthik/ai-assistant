@@ -32,7 +32,7 @@ describe("DEFAULT_VOICE_PREFERENCES", () => {
     expect(DEFAULT_VOICE_PREFERENCES.interactionMode).toBe("wake_word");
     expect(DEFAULT_VOICE_PREFERENCES.sttProvider).toBe("openai");
     expect(DEFAULT_VOICE_PREFERENCES.ttsProvider).toBe("openai");
-    expect(DEFAULT_VOICE_PREFERENCES.silenceMs).toBe(650);
+    expect(DEFAULT_VOICE_PREFERENCES.silenceMs).toBe(750);
     expect(DEFAULT_VOICE_PREFERENCES.bargeInEnabled).toBe(true);
     expect(DEFAULT_VOICE_PREFERENCES.audioCuesEnabled).toBe(true);
   });

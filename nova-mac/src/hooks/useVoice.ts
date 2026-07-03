@@ -103,15 +103,32 @@ async function recordUntilSilence(
       }
     }
 
-    const noSpeechTimer = setTimeout(() => {
-      if (!gate.confirmed) finish();
-    }, options.noSpeechTimeoutMs);
+    // If the user starts talking right at the no-speech deadline (the gate's
+    // sustained-speech hold hasn't confirmed yet), extend instead of cutting
+    // them off.
+    let lastLoudAt = 0;
+    function onNoSpeechDeadline() {
+      if (gate.confirmed) return;
+      if (Date.now() - lastLoudAt < 700) {
+        noSpeechTimer = setTimeout(onNoSpeechDeadline, 1500);
+        return;
+      }
+      finish();
+    }
+    let noSpeechTimer = setTimeout(onNoSpeechDeadline, options.noSpeechTimeoutMs);
     const maxTimer = setTimeout(finish, MAX_RECORDING_MS);
 
     analyser.start(stream, (level) => {
       onLevel(level);
       gate.push(level);
-      if (level >= gate.activeThreshold) {
+      // End-of-utterance uses the gate's RELEASE threshold (72% of trigger)
+      // once speech is confirmed: trailing words are naturally quieter, and
+      // comparing them against the full trigger threshold started the silence
+      // timer while the user was still finishing their sentence — the "cuts
+      // off the end of what I say" bug.
+      const sounding = level >= (gate.confirmed ? gate.releaseThreshold() : gate.activeThreshold);
+      if (sounding) {
+        lastLoudAt = Date.now();
         if (silenceTimer !== null) {
           clearTimeout(silenceTimer);
           silenceTimer = null;

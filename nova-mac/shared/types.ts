@@ -290,11 +290,13 @@ export interface MemoryItem {
 export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   interactionMode: "wake_word",
   autoSendOnEndOfTurn: true,
-  // 650ms of silence ends the utterance. 900 read as the assistant "hanging"
+  // 750ms of silence ends the utterance. 900 read as the assistant "hanging"
   // after you finished a sentence; with streaming STT the transcript is ready
-  // the moment this fires, so the shorter window is pure win. Raise it in
-  // Settings → Conversation if it cuts you off mid-thought.
-  silenceMs: 650,
+  // the moment this fires, so a shorter window is mostly pure win — but 650
+  // clipped trailing words for natural speakers (paired with release-threshold
+  // hysteresis in recordUntilSilence). Raise it in Settings → Conversation if
+  // it still cuts you off mid-thought.
+  silenceMs: 750,
   noSpeechTimeoutMs: 5000,
   spokenReplies: true,
   bargeInEnabled: true,
