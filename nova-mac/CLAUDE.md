@@ -205,9 +205,12 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   `isVoiceStopPhrase()` catches dismissals ("stop", "that'll be all", "thank you very much",
   etc.) — acknowledged with the `gotIt` cue and the turn ends without calling Claude at all.
 - **WebGL VoiceOrb** (`src/components/orb/webgl-voice-orb.ts` + `VoiceOrb.tsx` wrapper): a
-  fluid-noise plasma sphere (ported from a user-supplied reference), 4 color states — idle=grey,
+  fluid-noise plasma sphere (ported from a user-supplied reference), 4 color states — idle=blue,
   thinking=purple, speaking=green, bargein=orange — smoothly lerped (rate 0.22/frame, tuned for
-  snappy but not jarring transitions). `VoiceOrb`'s 6-value `visualMode` collapses onto these 4;
+  snappy but not jarring transitions); idle/speaking are deliberately pushed to opposite ends of
+  the blue↔green hue range (`STATE_COLORS` in `webgl-voice-orb.ts`) — they used to share enough
+  blue that listening vs. speaking was hard to tell apart under the rim/glow's white-mix.
+  `VoiceOrb`'s 6-value `visualMode` collapses onto these 4;
   `listening` reads as idle. Same external API as the old Canvas2D orb it replaced.
 - **Streaming TTS** (`src/voice/player.ts`): a `SentenceBuffer` chunks the streamed reply into
   sentences; chunks are synthesized ahead (prefetch depth 2) and scheduled gaplessly on a

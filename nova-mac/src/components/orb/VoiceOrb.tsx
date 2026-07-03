@@ -17,7 +17,7 @@ interface VoiceOrbProps {
 }
 
 // Our 6-state voice machine collapses onto the orb's 4 visual states —
-// "still listening" reads as idle (grey/calm), matching the reference orb's
+// "still listening" reads as idle (blue/calm), matching the reference orb's
 // own recommended mapping.
 function toOrbState(mode: VoiceVisualMode): OrbVisualState {
   switch (mode) {

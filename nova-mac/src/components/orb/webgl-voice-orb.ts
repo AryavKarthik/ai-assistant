@@ -2,16 +2,22 @@
  * WebGLVoiceOrb — a floating, animated WebGL orb for voice-assistant UIs.
  * Ported from the user-supplied orb.js reference (fluid plasma sphere, transparent bg).
  *
- * States: 'idle' (grey, listening/wake) | 'thinking' (purple) | 'speaking' (green)
+ * States: 'idle' (blue, listening/wake) | 'thinking' (purple) | 'speaking' (green)
  * | 'bargein' (orange, user interrupted).
  */
 
 export type OrbVisualState = "idle" | "thinking" | "speaking" | "bargein";
 
+// idle and speaking used to be a cool grey and a teal-leaning green — both
+// carried a similar amount of blue, so under the rim/glow mixing (which
+// blends toward white) they read as near-identical at a glance. idle is now
+// pushed to a clear, saturated blue and speaking's blue channel is cut back
+// to a purer green, maximizing hue separation between "listening" and
+// "speaking" instead of relying on a subtle warm/cool nudge.
 const STATE_COLORS: Record<OrbVisualState, [number, number, number]> = {
-  idle: [0.6, 0.61, 0.64],
+  idle: [0.25, 0.5, 0.98],
   thinking: [0.62, 0.36, 1.0],
-  speaking: [0.2, 0.9, 0.55],
+  speaking: [0.12, 0.92, 0.28],
   bargein: [1.0, 0.55, 0.15],
 };
 
