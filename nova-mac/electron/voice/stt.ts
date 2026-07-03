@@ -1,4 +1,5 @@
 import type { OpenAiSttModel, SttProvider, TranscribeRequest } from "@shared/types";
+import { transcribeWithGoogle } from "./stt-google";
 
 const DEFAULT_TRANSCRIBE_MODEL: OpenAiSttModel = "gpt-4o-transcribe";
 
@@ -51,10 +52,9 @@ export async function transcribe(
   req: TranscribeRequest,
   provider: SttProvider,
 ): Promise<string> {
-  if (provider === "google") {
-    // Seam: Google STT requires the GCP client + creds; wired in a later plan.
-    throw new Error("Google STT is not yet wired on the Mac app.");
-  }
   const audio = Buffer.from(req.audioBase64, "base64");
+  if (provider === "google") {
+    return transcribeWithGoogle(audio, req.mimeType, req.googleSttQuality);
+  }
   return transcribeWithOpenAi(audio, req.mimeType);
 }

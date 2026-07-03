@@ -153,6 +153,8 @@ export interface TranscribeRequest {
   /** base64-encoded audio bytes. */
   audioBase64: string;
   mimeType: string;
+  /** Only consulted when the provider is "google". */
+  googleSttQuality?: GoogleVoiceQuality;
 }
 
 export interface SynthesizeRequest {
@@ -161,6 +163,8 @@ export interface SynthesizeRequest {
   speed: number;
   hd?: boolean;
   provider?: TtsProvider;
+  /** Only consulted when the provider is "google". */
+  googleTtsQuality?: GoogleVoiceQuality;
 }
 export interface SynthesizeResult {
   /** base64-encoded MP3 bytes. */

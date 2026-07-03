@@ -11,6 +11,7 @@ import {
 import { nova } from "../lib/ipc";
 import type { AllPrefs, VoicePreferences, ProactivePrefs, AuthState } from "@shared/types";
 import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS } from "@shared/types";
+import { GOOGLE_VOICE_QUALITY_OPTIONS, googleTtsVoicesForQuality } from "@shared/google-voices";
 import { Select } from "../components/ui/Select";
 import { cn } from "../lib/utils";
 
@@ -285,6 +286,19 @@ export function SettingsPage() {
                       <option value="google">Google</option>
                     </Select>
                   </Row>
+                  {voice.sttProvider === "google" && (
+                    <Row label="Quality" description="Higher quality costs more and can be slightly slower.">
+                      <Select
+                        value={voice.googleSttQuality}
+                        onChange={(e) => save({ googleSttQuality: e.target.value as VoicePreferences["googleSttQuality"] })}
+                        className="w-32 capitalize"
+                      >
+                        {GOOGLE_VOICE_QUALITY_OPTIONS.map((q) => (
+                          <option key={q.id} value={q.id}>{q.label}</option>
+                        ))}
+                      </Select>
+                    </Row>
+                  )}
                 </Group>
                 <GroupLabel>Nova's voice</GroupLabel>
                 <Group>
@@ -327,6 +341,42 @@ export function SettingsPage() {
                         ))}
                       </Select>
                     </Row>
+                  )}
+                  {voice.ttsProvider === "google" && (
+                    <>
+                      <Row label="Quality" description="Higher quality costs more and can be slightly slower.">
+                        <Select
+                          value={voice.googleTtsQuality}
+                          onChange={(e) => {
+                            const quality = e.target.value as VoicePreferences["googleTtsQuality"];
+                            const voices = googleTtsVoicesForQuality(quality);
+                            // Keep the current voice if it's still valid at the new
+                            // quality tier, otherwise fall back to that tier's first
+                            // voice rather than silently keeping an invalid pairing.
+                            const nextVoice = voices.includes(voice.googleTtsVoice)
+                              ? voice.googleTtsVoice
+                              : voices[0];
+                            save({ googleTtsQuality: quality, googleTtsVoice: nextVoice });
+                          }}
+                          className="w-32 capitalize"
+                        >
+                          {GOOGLE_VOICE_QUALITY_OPTIONS.map((q) => (
+                            <option key={q.id} value={q.id}>{q.label}</option>
+                          ))}
+                        </Select>
+                      </Row>
+                      <Row label="Voice">
+                        <Select
+                          value={voice.googleTtsVoice}
+                          onChange={(e) => save({ googleTtsVoice: e.target.value })}
+                          className="w-56"
+                        >
+                          {googleTtsVoicesForQuality(voice.googleTtsQuality).map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </Select>
+                      </Row>
+                    </>
                   )}
                   <SliderRow
                     label="Speaking speed"

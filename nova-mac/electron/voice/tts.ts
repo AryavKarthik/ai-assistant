@@ -1,4 +1,5 @@
 import type { OpenAiTtsModel, SynthesizeRequest, SynthesizeResult } from "@shared/types";
+import { synthesizeWithGoogle } from "./tts-google";
 
 const OPENAI_TTS_VOICES = new Set([
   "marin", "cedar", "coral", "shimmer", "sage", "ash", "ballad",
@@ -76,7 +77,7 @@ export async function synthesize(req: SynthesizeRequest): Promise<SynthesizeResu
   const provider = req.provider ?? "openai";
   let audio: Buffer;
   if (provider === "google") {
-    throw new Error("Google TTS is not yet wired on the Mac app.");
+    audio = await synthesizeWithGoogle(req.text, req.voice, req.speed, req.googleTtsQuality);
   } else if (provider === "deepgram") {
     audio = await synthesizeWithDeepgram(req.text, req.voice);
   } else {

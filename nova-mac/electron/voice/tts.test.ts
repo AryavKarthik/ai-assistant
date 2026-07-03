@@ -18,9 +18,13 @@ describe("synthesize", () => {
     expect(Buffer.from(out.audioBase64, "base64")).toEqual(Buffer.from([1, 2, 3]));
   });
 
-  it("rejects google until it is wired on the Mac", async () => {
+  it("rejects google without GCP credentials configured", async () => {
+    delete process.env.GCP_PROJECT_ID;
+    delete process.env.GCP_SERVICE_ACCOUNT_JSON;
+    delete process.env.GCP_SERVICE_ACCOUNT_JSON_PATH;
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
     await expect(
       synthesize({ text: "hi", voice: "x", speed: 1, provider: "google" }),
-    ).rejects.toThrow(/not yet wired/i);
+    ).rejects.toThrow(/not configured/i);
   });
 });

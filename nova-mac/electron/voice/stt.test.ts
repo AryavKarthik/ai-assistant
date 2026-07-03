@@ -23,9 +23,13 @@ describe("transcribe", () => {
     );
   });
 
-  it("rejects google until it is wired on the Mac", async () => {
+  it("rejects google without GCP credentials configured", async () => {
+    delete process.env.GCP_PROJECT_ID;
+    delete process.env.GCP_SERVICE_ACCOUNT_JSON;
+    delete process.env.GCP_SERVICE_ACCOUNT_JSON_PATH;
+    delete process.env.GOOGLE_APPLICATION_CREDENTIALS;
     await expect(
       transcribe({ audioBase64: "", mimeType: "audio/webm" }, "google"),
-    ).rejects.toThrow(/not yet wired/i);
+    ).rejects.toThrow(/not configured/i);
   });
 });

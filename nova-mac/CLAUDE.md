@@ -181,7 +181,9 @@ the API keys).
 wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.runTurn()
   orb: summon → listening          (wake cue plays unless instantAckMode === "off")
   recordUntilSilence(stream)       // MediaRecorder until VAD silence (prefs.silenceMs)
-  ──IPC transcribe──▶ electron/voice/stt.ts (OpenAI Whisper/gpt-4o-transcribe)
+  ──IPC transcribe──▶ electron/voice/stt.ts (OpenAI Whisper/gpt-4o-transcribe, or Google via
+    electron/voice/stt-google.ts — V2/Chirp 2 with a V1 fallback, quality tiers in
+    shared/google-voices.ts, ported from the web app's lib/voice/stt/google*.ts)
   sanitizeTranscript() + isVoiceStopPhrase()   // drop hallucinated noise / kill words silently
   orb: submit(transcript) → processing
   ──IPC chatSend──▶ electron/chat.ts (Anthropic streaming) ──ChatDelta/Done/Error──▶
@@ -222,7 +224,13 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   old Canvas2D orb it replaced.
 - **Streaming TTS** (`src/voice/player.ts`): a `SentenceBuffer` chunks the streamed reply into
   sentences; chunks are synthesized ahead (prefetch depth 2) and scheduled gaplessly on a
-  Web Audio timeline. `stop()`/barge-in aborts in-flight synth + sources.
+  Web Audio timeline. `stop()`/barge-in aborts in-flight synth + sources. TTS provider fan-out
+  (`electron/voice/tts.ts`) covers OpenAI, Deepgram, and Google (`electron/voice/tts-google.ts`,
+  quality tiers + voice lists in `shared/google-voices.ts`) — `googleTtsQuality`/`googleTtsVoice`
+  and `googleSttQuality` used to be saved prefs with a Settings picker but no code ever actually
+  read them (`stt.ts`/`tts.ts` threw "not yet wired" for the `google` provider unconditionally);
+  they're now threaded end-to-end from `useVoice.ts` through `VoicePlayerOptions`/
+  `TranscribeRequest`/`SynthesizeRequest` to the real GCP calls.
 - **Voice preferences** come from Supabase `user_preferences.voice` (JSONB) merged over
   `DEFAULT_VOICE_PREFERENCES` in `shared/types.ts`. Default interaction mode is `wake_word`.
 - **Error states**: mic unavailable, recording failure, empty transcript, and chat errors all
@@ -358,7 +366,13 @@ produces near-zero scores rather than an error, so the exact contract matters:
 ## Environment variables
 
 Local dev minimum (`.env.local`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`,
-`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (STT + TTS). Google integrations need `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY`. `DEEPGRAM_API_KEY` only if using
+`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` (STT + TTS). Google Calendar/Gmail/YouTube *connections*
+need `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_TOKEN_ENCRYPTION_KEY` (OAuth — see
+"Google OAuth" above) — these are **unrelated** to Google Cloud Speech/TTS, which uses a
+service-account instead: `GCP_PROJECT_ID` + either `GCP_SERVICE_ACCOUNT_JSON` (raw single-line
+JSON) or `GOOGLE_APPLICATION_CREDENTIALS`/`GCP_SERVICE_ACCOUNT_JSON_PATH` pointing at a key
+file — same precedence and same "don't paste multi-line JSON into `.env.local`, save it to a
+file instead" guidance as the web app one level up. Optional `GCP_SPEECH_V2_LOCATION` (default
+`asia-southeast1`, used for the Chirp 2 STT tier only). `DEEPGRAM_API_KEY` only if using
 Deepgram TTS. Model overrides: `ANTHROPIC_MODEL_LIGHT` (default `claude-haiku-4-5-20251001`),
 `OPENAI_STT_MODEL`.

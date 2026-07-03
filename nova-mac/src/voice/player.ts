@@ -12,6 +12,7 @@ async function synthesizeChunk(
     provider?: import("@shared/types").TtsProvider;
     deepgramTtsVoice?: string;
     openAiTtsModel?: import("@shared/types").OpenAiTtsModel;
+    googleTtsVoice?: string;
     googleTtsQuality?: import("@shared/types").GoogleVoiceQuality;
     signal?: AbortSignal;
   },
@@ -20,13 +21,16 @@ async function synthesizeChunk(
   const voice =
     provider === "deepgram"
       ? (options.deepgramTtsVoice ?? "aura-asteria-en")
-      : options.voice;
+      : provider === "google"
+        ? (options.googleTtsVoice ?? options.voice)
+        : options.voice;
   const { audioBase64 } = await nova().synthesize({
     text,
     voice,
     speed: options.speed,
     hd: provider === "openai" ? options.hd === true : undefined,
     provider,
+    googleTtsQuality: provider === "google" ? options.googleTtsQuality : undefined,
   });
   const bytes = Uint8Array.from(atob(audioBase64), (c) => c.charCodeAt(0));
   return new Blob([bytes], { type: "audio/mpeg" });
@@ -38,6 +42,7 @@ export interface VoicePlayerOptions {
   hd?: boolean;
   provider?: import("@shared/types").TtsProvider;
   openAiTtsModel?: import("@shared/types").OpenAiTtsModel;
+  googleTtsVoice?: string;
   googleTtsQuality?: import("@shared/types").GoogleVoiceQuality;
   deepgramTtsVoice?: string;
 }
@@ -192,6 +197,7 @@ export class VoicePlayer {
       hd: options.hd,
       provider: options.provider,
       openAiTtsModel: options.openAiTtsModel,
+      googleTtsVoice: options.googleTtsVoice,
       googleTtsQuality: options.googleTtsQuality,
       deepgramTtsVoice: options.deepgramTtsVoice,
       signal: controller.signal,

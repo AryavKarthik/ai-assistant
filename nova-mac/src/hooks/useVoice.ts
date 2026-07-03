@@ -260,7 +260,11 @@ export function useVoice(): {
       try {
         const audioBase64 = await blobToBase64(audio);
         transcript = await nova().transcribe(
-          { audioBase64, mimeType: audio.type || "audio/webm" },
+          {
+            audioBase64,
+            mimeType: audio.type || "audio/webm",
+            googleSttQuality: prefs.current.googleSttQuality,
+          },
           prefs.current.sttProvider,
         );
       } catch {
@@ -312,6 +316,8 @@ export function useVoice(): {
             hd: prefs.current.ttsHd,
             provider: prefs.current.ttsProvider,
             deepgramTtsVoice: prefs.current.deepgramTtsVoice,
+            googleTtsVoice: prefs.current.googleTtsVoice,
+            googleTtsQuality: prefs.current.googleTtsQuality,
           })
         : null;
 
