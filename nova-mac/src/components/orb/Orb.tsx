@@ -168,7 +168,13 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
   const orbCenterY = `${ORB_BOX_TOP + ORB_BOX / 2}px`;
 
   return (
-    <div style={{ position: "relative", width: "100%", height: "100%" }}>
+    // Viewport units, not %: html/body/#root never get an explicit height
+    // anywhere in this app (AppShell.tsx uses the same 100vh trick for the
+    // same reason) — a plain height:"100%" here has no ancestor chain to
+    // resolve against, so it computes to auto/0 and every absolutely
+    // positioned child below (the orb, the inset:0 chrome) loses its real
+    // containing block and collapses/mispositions.
+    <div style={{ position: "relative", width: "100vw", height: "100vh" }}>
       <AnimatePresence>
         {expanded && (
           <motion.div
