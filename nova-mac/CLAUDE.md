@@ -322,8 +322,11 @@ produces near-zero scores rather than an error, so the exact contract matters:
   emits **Int16, 16 kHz mono, 1280-sample (~80 ms) frames** (`SAMPLES_PER_FRAME` in
   `shared/wake-constants.ts`) over `IpcChannel.WakeAudioFrame`.
 - `electron/wakeword/index.ts` (`WakeWordController`, main thread): forwards frames to the
-  worker, applies a fire threshold (default `0.05`), debounce, and an arm/re-arm gate; pauses
-  during a voice turn and resumes on `voiceTurnEnded`.
+  worker, applies a fire threshold (default `0.05`, mutable via `setThreshold` — main.ts derives
+  it from `VoicePreferences.wakeWordSensitivity` via `wakeThresholdFromSensitivity` at startup
+  and on every `PrefsSet`; this preference used to be saved from Settings but never actually
+  read anywhere, so the slider had zero effect on real-world detection consistency), debounce,
+  and an arm/re-arm gate; pauses during a voice turn and resumes on `voiceTurnEnded`.
 - `electron/wakeword/worker.ts` + `engine.ts`: three-stage ONNX pipeline
   `melspectrogram.onnx → embedding_model.onnx → hey_jarvis_v0.1.onnx`. **Preprocessing the
   models were trained on (all four are required or scores flatline near 0):**

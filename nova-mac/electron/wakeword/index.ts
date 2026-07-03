@@ -3,6 +3,21 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEBOUNCE_MS = 2000;
+const DEFAULT_THRESHOLD = 0.05;
+
+/** Map wakeWordSensitivity (0 strict … 1 sensitive) to a fire threshold.
+ *  0.5 (the preference default) resolves to DEFAULT_THRESHOLD, so this is a
+ *  pure refinement — nobody who never touches the slider sees a behavior
+ *  change. Previously this preference was saved but never actually read: the
+ *  controller always used the fixed 0.05 default regardless of what the user
+ *  configured in Settings, which meant a person whose mic/room made "hey
+ *  jarvis" score marginally (e.g. consistently landing around 0.03-0.06) had
+ *  no way to fix inconsistent activation — the one knob meant for exactly
+ *  that had no effect. */
+export function wakeThresholdFromSensitivity(sensitivity: number): number {
+  const s = Math.max(0, Math.min(1, sensitivity));
+  return 0.08 - s * 0.06; // 0.08 (strict) … 0.02 (sensitive)
+}
 
 export class WakeWordController {
   private worker: Worker | null = null;
@@ -18,8 +33,12 @@ export class WakeWordController {
       dirname(fileURLToPath(import.meta.url)),
       "models",
     ),
-    private readonly threshold = 0.05,
+    private threshold = DEFAULT_THRESHOLD,
   ) {}
+
+  setThreshold(threshold: number): void {
+    this.threshold = threshold;
+  }
 
   start(onWake: () => void): void {
     this.onWake = onWake;

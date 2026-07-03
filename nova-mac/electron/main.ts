@@ -20,7 +20,7 @@ import { createTray } from "./tray";
 import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWindowHandlers } from "./ipc";
 import { streamChat, cancelChat } from "./chat";
 import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
-import { WakeWordController } from "./wakeword/index";
+import { WakeWordController, wakeThresholdFromSensitivity } from "./wakeword/index";
 import { IpcChannel, type OrbDragMoveRequest } from "@shared/types";
 
 let orbWin: BrowserWindow | null = null;
@@ -169,6 +169,7 @@ app.whenReady().then(async () => {
     if (patch.voice) await mod.saveVoicePreferences(patch.voice as never);
     if (patch.proactive) await mod.saveProactivePreferences(patch.proactive as Record<string, unknown>);
     const updated = await mod.getAllPreferences();
+    wake.setThreshold(wakeThresholdFromSensitivity(updated.voice.wakeWordSensitivity));
     // Broadcast to all windows so orb voice prefs stay in sync
     for (const w of BrowserWindow.getAllWindows()) {
       w.webContents.send(IpcChannel.PrefsChanged, updated.voice);
@@ -230,6 +231,13 @@ app.whenReady().then(async () => {
     pushFrame: (buf) => wake.pushFrame(buf),
     setEnabled: (on) => wake.setEnabled(on),
   });
+  // Apply the user's saved wakeWordSensitivity on startup — previously this
+  // preference was persisted but never actually read, so the fire threshold
+  // was always the fixed default regardless of what Settings showed.
+  import("./voice/preferences")
+    .then((m) => m.getVoicePreferences())
+    .then((p) => wake.setThreshold(wakeThresholdFromSensitivity(p.wakeWordSensitivity)))
+    .catch(() => {});
   // Resume wake detection once the voice turn completes, and — if this
   // appearance was system-triggered and the user never opened the panel —
   // tuck the orb away again after a moment.
