@@ -37,6 +37,11 @@ export enum IpcChannel {
   /** Renderer streams pointer-drag deltas so main moves the orb window (manual drag —
    *  a CSS drag region would swallow the mouseup on macOS and break click detection). */
   OrbDragMove = "orb:dragMove",
+  /** Renderer toggles OS-level click-through on the orb window. The window is always
+   *  panel-sized; while collapsed everything but the orb itself is invisible, so the
+   *  window must ignore mouse events (with forwarding, for hover detection) except
+   *  when the cursor is over the orb. */
+  OrbSetMouseIgnore = "orb:setMouseIgnore",
   // Preferences push
   PrefsChanged = "prefs:changed",
   // Prefs get/set (used by Settings tab — wired in Task 7)

@@ -1,45 +1,33 @@
 import { BrowserWindow, screen } from "electron";
 import { join } from "node:path";
 
-// Two orb window states: a tiny floating Siri-like orb, and the expanded chat panel.
-export const ORB_MINI_SIZE = 96;
+// The orb window is ALWAYS panel-sized. Collapsed vs expanded is purely a
+// renderer state: collapsed shows only the orb (pinned to the window's
+// top-right corner) with the rest of the window click-through, expanded fades
+// the chat chrome in around it. Never resizing the window is what lets the orb
+// stay pixel-stationary and flicker-free across the transition.
 export const ORB_PANEL_WIDTH = 380;
 export const ORB_PANEL_HEIGHT = 520;
 // Tight to the corner, hugging the menu bar the way Siri's own icon does.
 const ORB_MARGIN = 8;
 
-function orbBounds(expanded: boolean): { width: number; height: number } {
-  return expanded
-    ? { width: ORB_PANEL_WIDTH, height: ORB_PANEL_HEIGHT }
-    : { width: ORB_MINI_SIZE, height: ORB_MINI_SIZE };
-}
-
 /**
- * Position (and size) the orb at the top-right of the display the cursor is on
- * (Siri-style corner popup), just under the menu bar. The top-right corner
- * stays anchored when toggling between mini and expanded.
+ * Position the orb window at the top-right of the display the cursor is on
+ * (Siri-style corner popup), just under the menu bar. The orb itself hugs the
+ * window's top-right corner, so this puts the orb in the screen corner.
  */
-export function positionOrbTopRight(win: BrowserWindow, expanded: boolean): void {
+export function positionOrbTopRight(win: BrowserWindow): void {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const { x, y, width } = display.workArea;
-  const size = orbBounds(expanded);
   win.setBounds(
     {
-      x: x + width - size.width - ORB_MARGIN,
+      x: x + width - ORB_PANEL_WIDTH - ORB_MARGIN,
       y: y + ORB_MARGIN,
-      width: size.width,
-      height: size.height,
+      width: ORB_PANEL_WIDTH,
+      height: ORB_PANEL_HEIGHT,
     },
     false,
   );
-}
-
-/** Resize in place, keeping the top-right corner anchored on the current display. */
-export function resizeOrb(win: BrowserWindow, expanded: boolean): void {
-  const current = win.getBounds();
-  const size = orbBounds(expanded);
-  const right = current.x + current.width;
-  win.setBounds({ x: right - size.width, y: current.y, ...size }, false);
 }
 
 /**
@@ -72,8 +60,8 @@ export function isPointOnAnyDisplay(point: { x: number; y: number }): boolean {
 
 export function createOrbWindow(): BrowserWindow {
   const win = new BrowserWindow({
-    width: ORB_MINI_SIZE,
-    height: ORB_MINI_SIZE,
+    width: ORB_PANEL_WIDTH,
+    height: ORB_PANEL_HEIGHT,
     show: false,
     frame: false,
     transparent: true,
@@ -97,7 +85,7 @@ export function createOrbWindow(): BrowserWindow {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   // Float above full-screen apps like Siri does.
   win.setAlwaysOnTop(true, "screen-saver");
-  positionOrbTopRight(win, false);
+  positionOrbTopRight(win);
 
   // Allow mic + camera access — without this Electron silently denies getUserMedia.
   // macOS will still show its own permission dialog on first use.

@@ -62,6 +62,8 @@ contextBridge.exposeInMainWorld("nova", {
   },
   orbDragMove: (dx: number, dy: number) =>
     ipcRenderer.send(IpcChannel.OrbDragMove, { dx, dy }),
+  orbSetMouseIgnore: (ignore: boolean) =>
+    ipcRenderer.send(IpcChannel.OrbSetMouseIgnore, ignore),
   onOrbDragVelocity: (cb: (p: unknown) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
     ipcRenderer.on(IpcChannel.OrbDragVelocity, h);

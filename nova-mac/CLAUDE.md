@@ -49,7 +49,7 @@ The app has two distinct windows that share a single renderer bundle:
 
 | Window | Size | Style | Purpose |
 |--------|------|-------|---------|
-| Orb (`orbWin`) | 96×96 mini ↔ 380×520 panel | frameless, transparent, always-on-top (screen-saver level) | Persistent Siri-style orb, user-draggable; expands into the chat panel |
+| Orb (`orbWin`) | 380×520 always (collapsed = orb only, rest click-through) | frameless, transparent, always-on-top (screen-saver level) | Persistent Siri-style orb, user-draggable; expands into the chat panel |
 | App (`appWin`) | 920×680 | framed, hiddenInset title bar, vibrancy | Settings / Reminders / Memory / Connections tabs |
 
 `src/main.tsx` calls `nova().getWindowMode()` at mount → renders `<App />` (orb) or
@@ -60,7 +60,7 @@ orb window's id: orb → `"orb"`, anything else → `"app"`.
 - **Back to orb**: AppDock home icon → `nova().appClose()` → hides app, shows orb.
 - **Tray**: "Open Nova" menu item creates/shows app window independently.
 
-**Siri-style orb lifecycle**: the orb window (`MiniOrb.tsx`, 96×96 transparent) is **hidden by
+**Siri-style orb lifecycle**: the orb window (`Orb.tsx`, transparent) is **hidden by
 default** and only appears when something activates it — never shown just because it finished
 loading (`createOrbWindow` in `window.ts` does not auto-show in dev or prod). Main tracks this
 with `orbArmedForAutoHide` in `main.ts`:
@@ -71,12 +71,23 @@ with `orbArmedForAutoHide` in `main.ts`:
 - **Manual activation** (orb click, `Cmd+Shift+Space`, tray "Open Nova", closing the Settings
   window) → disarms auto-hide and force-shows the window; collapsing afterward only shrinks it
   back to the mini orb, it does not vanish.
-`IpcChannel.OrbSetExpanded(on, manual?)` carries this distinction from the renderer; when no
-custom position is set, main resizes/positions top-right-anchored via `resizeOrb`/
-`positionOrbTopRight` (`window.ts`) and broadcasts `IpcChannel.OrbExpandedChanged`.
+`IpcChannel.OrbSetExpanded(on, manual?)` carries this distinction from the renderer; main
+broadcasts `IpcChannel.OrbExpandedChanged`.
 
-**Dragging**: `MiniOrb.tsx` implements dragging *manually* — pointer capture in the component
-streams screen-space deltas over `IpcChannel.OrbDragMove` and main moves the window with
+**Expand/collapse never resizes the window.** The orb window is always panel-sized (380×520,
+positioned via `positionOrbTopRight` in `window.ts`); the orb itself lives in a fixed box
+pinned to the window's top-right corner in *both* modes (`Orb.tsx` — one always-mounted WebGL
+orb that only scales around its own center), and the chat chrome fades/scales in around it via
+AnimatePresence. That is what makes the transition flicker-free with the orb pixel-stationary:
+no window resize, no component remount, no reposition. Clicking the orb toggles: expand when
+collapsed, collapse when expanded. While collapsed, everything except the orb box must not eat
+clicks meant for windows beneath — the renderer drives `IpcChannel.OrbSetMouseIgnore` →
+`setIgnoreMouseEvents(ignore, { forward: true })`; forwarding keeps mousemove observable so
+hover over the orb box re-enables interactivity (never toggled mid-drag). Main force-clears the
+ignore whenever the panel expands.
+
+**Dragging**: the orb (`Orb.tsx`) implements dragging *manually* — pointer capture on the orb
+box streams screen-space deltas over `IpcChannel.OrbDragMove` and main moves the window with
 `setPosition`. It must NOT use a CSS `-webkit-app-region: drag` region: on macOS a mousedown
 in a drag region is handed to the OS window-drag session and the mouseup never reaches the
 page, which silently breaks click-to-open (this happened once — the movement-threshold
@@ -84,12 +95,13 @@ click/drag disambiguation only works with manual dragging). The expanded panel's
 strip is still a native drag region (fine there: its buttons are `no-drag` children).
 `main.ts` listens for the window's native `moved` event to detect *real* user drags —
 `orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events our own
-`positionOrbTopRight`/`resizeOrb`/`setPosition` calls trigger, since Electron fires `moved`
+`positionOrbTopRight`/`setPosition` calls trigger, since Electron fires `moved`
 for programmatic changes too and there's no other way to tell them apart. `OrbDragMove`'s
 `setPosition` calls are deliberately *not* suppressed — they're user drags, so `move`/`moved`
 firing for them is what drives the wiggle and persistence below. Once a real
 drag is detected, `orbUserPositioned` flips on and the spot is persisted via
-`electron/orb-position-store.ts` (plain JSON under `userData`, restored on next launch);
+`electron/orb-position-store.ts` (versioned JSON under `userData` — v2, since the window-origin
+semantics changed when the window became always-panel-sized; v1 files are ignored once);
 `positionOrb()` becomes a no-op as long as `isPointOnAnyDisplay` says that spot is still on
 some connected display. `watchDisplayChanges` (called once on `orbWin` in `main.ts`) falls back
 to the default top-right corner and clears `orbUserPositioned` if a monitor change leaves the
@@ -101,9 +113,9 @@ live velocity and broadcast it as `IpcChannel.OrbDragVelocity`. `useOrbDragWiggl
 (`src/hooks/useOrbDragWiggle.ts`) turns that into a squash-and-stretch transform — pure math in
 `velocityToWiggle()` (tested in isolation, no React/DOM needed) stretches the orb along the
 direction of motion and squashes it perpendicular, capped so it can't grow enough to clip its
-window; the hook self-decays back to neutral if no new velocity tick arrives within 140ms. Both
-`MiniOrb.tsx` and the expanded panel's orb (`Orb.tsx`) wrap `VoiceOrb` in a `motion.div` driven
-by this hook with `jellySpring` (`src/motion/springs.ts`) for the bouncy settle.
+window; the hook self-decays back to neutral if no new velocity tick arrives within 140ms.
+`Orb.tsx` wraps `VoiceOrb` in a `motion.div` driven by this hook with `jellySpring`
+(`src/motion/springs.ts`) for the bouncy settle.
 
 Voice turns (listening/thinking/speaking/barge-in) **never**
 auto-expand the panel — the orb's own color is the only feedback while it stays a corner orb;

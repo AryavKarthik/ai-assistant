@@ -11,7 +11,6 @@ import {
   createOrbWindow,
   createAppWindow,
   positionOrbTopRight,
-  resizeOrb,
   watchDisplayChanges,
   isPointOnAnyDisplay,
 } from "./window";
@@ -44,7 +43,7 @@ let orbHideTimer: ReturnType<typeof setTimeout> | null = null;
 // The user can drag the orb anywhere; once they do, we stop forcing it back
 // to the top-right corner and remember where they left it (persisted to
 // disk). `moved` fires for *every* position change though, including our own
-// programmatic ones (positionOrbTopRight/resizeOrb) — `orbMoveIsProgrammatic`
+// programmatic ones (positionOrbTopRight/setPosition) — `orbMoveIsProgrammatic`
 // suppresses those so only real user drags get treated as "the user chose a
 // spot" and saved.
 let orbUserPositioned = false;
@@ -83,16 +82,19 @@ function scheduleOrbAutoHide(delayMs: number): void {
 function setOrbExpanded(on: boolean): void {
   if (!orbWin || orbWin.isDestroyed()) return;
   orbExpanded = on;
-  moveOrbProgrammatically(() => resizeOrb(orbWin!, on));
+  // The window never resizes — expanding is a pure renderer animation around
+  // the stationary orb. Just make sure the panel is immediately clickable;
+  // on collapse the renderer re-engages hover-gated click-through itself.
+  if (on) orbWin.setIgnoreMouseEvents(false);
   orbWin.webContents.send(IpcChannel.OrbExpandedChanged, on);
 }
 
 /** Positions the orb at the default corner, unless the user has dragged it
  *  somewhere else and that spot is still on-screen. */
-function positionOrb(expanded: boolean): void {
+function positionOrb(): void {
   if (!orbWin || orbWin.isDestroyed()) return;
   if (orbUserPositioned && isPointOnAnyDisplay(orbWin.getBounds())) return;
-  moveOrbProgrammatically(() => positionOrbTopRight(orbWin!, expanded));
+  moveOrbProgrammatically(() => positionOrbTopRight(orbWin!));
 }
 
 /** Shows the orb (mini) for a system-triggered activation — wake word or timer. */
@@ -100,7 +102,7 @@ function activateOrb(): void {
   if (!orbWin || orbWin.isDestroyed()) return;
   clearOrbHideTimer();
   if (!orbWin.isVisible()) {
-    positionOrb(orbExpanded);
+    positionOrb();
     // showInactive: don't steal focus from whatever the user is doing.
     orbWin.showInactive();
   }
@@ -248,7 +250,7 @@ app.whenReady().then(async () => {
       clearOrbHideTimer();
       orbArmedForAutoHide = false;
       if (on && orbWin && !orbWin.isDestroyed() && !orbWin.isVisible()) {
-        positionOrb(true);
+        positionOrb();
         orbWin.show();
       }
     }
@@ -259,7 +261,16 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Manual orb drag: the renderer streams pointer deltas (MiniOrb.tsx) and we
+  // Collapsed-mode click-through: the always-panel-sized window must not eat
+  // clicks meant for whatever is under its invisible area. The renderer flips
+  // this based on hover: ignore (with mousemove forwarding, so hover is still
+  // observable) everywhere except over the orb itself.
+  ipcMain.on(IpcChannel.OrbSetMouseIgnore, (_e, ignore: boolean) => {
+    if (!orbWin || orbWin.isDestroyed()) return;
+    orbWin.setIgnoreMouseEvents(Boolean(ignore), { forward: true });
+  });
+
+  // Manual orb drag: the renderer streams pointer deltas (Orb.tsx) and we
   // move the window. Deliberately NOT wrapped in moveOrbProgrammatically — these
   // are real user drags, so the `move`/`moved` listeners below should fire as
   // usual (jelly-wiggle velocity + position persistence).
@@ -338,7 +349,7 @@ app.whenReady().then(async () => {
     if (!orbWin || orbWin.isDestroyed() || !orbWin.isVisible()) return;
     if (orbUserPositioned && isPointOnAnyDisplay(orbWin.getBounds())) return;
     orbUserPositioned = false;
-    moveOrbProgrammatically(() => positionOrbTopRight(orbWin!, orbExpanded));
+    moveOrbProgrammatically(() => positionOrbTopRight(orbWin!));
   });
 
   _trayRef = createTray(orbWin, () => {
@@ -365,7 +376,7 @@ app.whenReady().then(async () => {
     clearOrbHideTimer();
     orbArmedForAutoHide = false;
     if (!orbWin.isVisible()) {
-      positionOrb(true);
+      positionOrb();
       orbWin.show();
       setOrbExpanded(true);
       return;

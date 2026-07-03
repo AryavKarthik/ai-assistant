@@ -39,4 +39,9 @@ describe("orb-position-store", () => {
     writeFileSync(join(userDataDir, "orb-position.json"), "{not json", "utf8");
     expect(loadOrbPosition()).toBeNull();
   });
+
+  it("ignores an unversioned (v1, mini-window era) position", () => {
+    writeFileSync(join(userDataDir, "orb-position.json"), JSON.stringify({ x: 10, y: 20 }), "utf8");
+    expect(loadOrbPosition()).toBeNull();
+  });
 });

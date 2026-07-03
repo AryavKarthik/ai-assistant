@@ -3,7 +3,6 @@ import { nova } from "./lib/ipc";
 import type { AuthState } from "@shared/types";
 import { useVoice } from "./hooks/useVoice";
 import { Orb } from "./components/orb/Orb";
-import { MiniOrb } from "./components/orb/MiniOrb";
 
 function VoiceApp() {
   const { state, level, sendText } = useVoice();
@@ -42,32 +41,24 @@ function VoiceApp() {
     }
   }, [hasNotice]);
 
-  if (!expanded) {
-    return (
-      <MiniOrb
-        state={state}
-        level={level}
-        onClick={() => {
-          autoExpandedRef.current = false;
-          nova().orbSetExpanded(true, true); // manual: stays open until closed
-        }}
-      />
-    );
-  }
-
+  // One always-mounted Orb: the orb itself never remounts or moves across
+  // expand/collapse — clicking it toggles the chat chrome around it.
   return (
-    <div style={{ height: "100%", padding: 8, boxSizing: "border-box" }}>
-      <Orb
-        state={state}
-        level={level}
-        onSend={sendText}
-        onCollapse={() => {
-          autoExpandedRef.current = false;
-          nova().orbSetExpanded(false, true); // manual: shrinks, doesn't vanish
-        }}
-        onExpand={() => nova().appOpen()}
-      />
-    </div>
+    <Orb
+      state={state}
+      level={level}
+      expanded={expanded}
+      onSend={sendText}
+      onOrbClick={() => {
+        autoExpandedRef.current = false;
+        nova().orbSetExpanded(!expanded, true); // manual: open stays, collapse doesn't vanish
+      }}
+      onCollapse={() => {
+        autoExpandedRef.current = false;
+        nova().orbSetExpanded(false, true); // manual: collapses, doesn't vanish
+      }}
+      onExpand={() => nova().appOpen()}
+    />
   );
 }
 

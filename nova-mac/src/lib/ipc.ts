@@ -33,6 +33,9 @@ export interface NovaBridge {
   onOrbExpandedChanged(cb: (on: boolean) => void): () => void;
   /** Move the orb window by a screen-px delta during a manual pointer drag. */
   orbDragMove(dx: number, dy: number): void;
+  /** Toggle OS-level click-through on the orb window (collapsed mode: everything
+   *  except the orb itself must let clicks fall through to whatever is beneath). */
+  orbSetMouseIgnore(ignore: boolean): void;
   onOrbDragVelocity(cb: (p: import("@shared/types").OrbDragVelocityEvent) => void): () => void;
   appOpen(): void;
   appClose(): void;
