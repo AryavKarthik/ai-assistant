@@ -89,11 +89,14 @@ function setOrbExpanded(on: boolean): void {
   orbWin.webContents.send(IpcChannel.OrbExpandedChanged, on);
 }
 
-/** Positions the orb at the default corner, unless the user has dragged it
- *  somewhere else and that spot is still on-screen. */
+/** Repositions the orb to the default corner ONLY if its current spot is no
+ *  longer on any connected display. It used to also snap non-user-positioned
+ *  windows to the top-right of whichever display the cursor happened to be on
+ *  every time they were re-shown — so the orb "randomly teleported" between
+ *  hide/show cycles instead of reappearing exactly where it was. */
 function positionOrb(): void {
   if (!orbWin || orbWin.isDestroyed()) return;
-  if (orbUserPositioned && isPointOnAnyDisplay(orbWin.getBounds())) return;
+  if (isPointOnAnyDisplay(orbWin.getBounds())) return;
   moveOrbProgrammatically(() => positionOrbTopRight(orbWin!));
 }
 

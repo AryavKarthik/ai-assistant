@@ -13,9 +13,19 @@ export type CueName = "wake" | "gotIt" | "reply" | "bargeIn" | "error" | "timer"
 
 let ctx: AudioContext | null = null;
 
-function ensureCtx(): AudioContext {
+async function ensureCtx(): Promise<AudioContext> {
   if (!ctx || ctx.state === "closed") ctx = new AudioContext();
-  if (ctx.state === "suspended") void ctx.resume();
+  // Await the resume: scheduling against a suspended context computes note
+  // times from a frozen currentTime, so by the time the context actually
+  // resumes those times are already in the past and the cue plays clipped or
+  // not at all — which is exactly what made cues inconsistent after idle.
+  if (ctx.state === "suspended") {
+    try {
+      await ctx.resume();
+    } catch {
+      // fall through — scheduling is still best-effort
+    }
+  }
   return ctx;
 }
 
@@ -48,8 +58,15 @@ const CUES: Record<CueName, Note[]> = {
 };
 
 export function playCue(name: CueName): void {
+  void ensureCtx()
+    .then((audio) => scheduleCue(audio, name))
+    .catch(() => {
+      // cues are best-effort
+    });
+}
+
+function scheduleCue(audio: AudioContext, name: CueName): void {
   try {
-    const audio = ensureCtx();
     const now = audio.currentTime + 0.01;
     for (const note of CUES[name]) {
       const osc = audio.createOscillator();

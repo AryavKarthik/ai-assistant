@@ -13,7 +13,10 @@ export function startWakeCapture(
   const source = ctx.createMediaStreamSource(stream);
   // ScriptProcessorNode is deprecated but universally supported in Electron/Chromium
   // 1 output channel required to connect to destination; output is silent (input-only processing)
-  const node = ctx.createScriptProcessor(4096, 1, 1);
+  // 2048 samples @ 16 kHz = 128 ms per callback — the previous 4096 buffer sat on
+  // up to ~256 ms of audio before frames even left the renderer, a needless chunk
+  // of wake-to-activation latency.
+  const node = ctx.createScriptProcessor(2048, 1, 1);
   let acc: number[] = [];
 
   node.onaudioprocess = (e) => {

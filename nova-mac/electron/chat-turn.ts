@@ -133,7 +133,6 @@ export async function streamTurn(
   try {
     const userId = await getUserId();
     const conversationId = await getOrCreateConversation(userId);
-    const userMsg = await persistUserMessage(conversationId, transcript);
 
     const intent = inferContextIntent(transcript, "main");
     let plan = resolveRetrievalPlan("main", intent);
@@ -146,7 +145,13 @@ export async function streamTurn(
       : MAX_TOOL_ITERATIONS_TEXT;
     const maxTokens = isVoice ? 650 : 768;
 
-    const [history, relevantContext, timezone] = await Promise.all([
+    // Persist the user message in parallel with history/retrieval/timezone —
+    // it used to be a serial Supabase round-trip blocking the whole turn
+    // before retrieval even started, adding hundreds of ms to every reply.
+    // The persisted row may or may not land in the history query depending on
+    // timing, so dedupe it by id and append the transcript ourselves.
+    const [userMsg, history, relevantContext, timezone] = await Promise.all([
+      persistUserMessage(conversationId, transcript),
       loadLastNMessages(conversationId, plan.chatHistoryLimit),
       retrieveWithDeadline(
         userId,
@@ -159,7 +164,13 @@ export async function streamTurn(
 
     const clock = buildClockForZone(timezone);
     const system = buildMacSystemPrompt(isVoice, clock);
-    const messages = buildMessages(history, relevantContext);
+    const messages = buildMessages(
+      [
+        ...history.filter((m) => m.id !== userMsg.id),
+        { id: userMsg.id, role: "user" as const, content: transcript },
+      ],
+      relevantContext,
+    );
     const toolContext: ToolContext = {
       userId,
       conversationId,

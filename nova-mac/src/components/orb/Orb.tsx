@@ -97,7 +97,14 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
   // Manual drag (see MiniOrb history: a CSS drag region swallows the mouseup
   // on macOS and kills click detection). Screen-space coords — the window
   // moves under the cursor during a drag, so client coords barely change.
-  const drag = useRef<{ startX: number; startY: number; lastX: number; lastY: number } | null>(null);
+  const drag = useRef<{
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    /** True once movement passed the click threshold and the window follows. */
+    moving: boolean;
+  } | null>(null);
 
   // Collapsed-mode click-through: the window is always panel-sized, so while
   // collapsed everything except the orb box must let clicks fall through to
@@ -134,12 +141,28 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
   function handlePointerDown(e: React.PointerEvent) {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { startX: e.screenX, startY: e.screenY, lastX: e.screenX, lastY: e.screenY };
+    drag.current = {
+      startX: e.screenX,
+      startY: e.screenY,
+      lastX: e.screenX,
+      lastY: e.screenY,
+      moving: false,
+    };
   }
 
   function handlePointerMove(e: React.PointerEvent) {
     const d = drag.current;
     if (!d) return;
+    // Don't move the window until the press has clearly become a drag —
+    // streaming sub-threshold jitter made every click nudge the window a
+    // pixel or two and fire the jelly wiggle, which read as the orb
+    // "spazzing out" on click.
+    if (!d.moving) {
+      const fromStartX = Math.abs(e.screenX - d.startX);
+      const fromStartY = Math.abs(e.screenY - d.startY);
+      if (fromStartX < CLICK_MOVE_THRESHOLD && fromStartY < CLICK_MOVE_THRESHOLD) return;
+      d.moving = true;
+    }
     const dx = e.screenX - d.lastX;
     const dy = e.screenY - d.lastY;
     if (dx !== 0 || dy !== 0) {
@@ -160,6 +183,37 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
 
   function handlePointerCancel() {
     drag.current = null;
+  }
+
+  // Expanded-panel drag: same manual pointer-drag as the orb (pointer capture
+  // + OrbDragMove deltas). Native -webkit-app-region:drag hands the mousedown
+  // to the OS drag session on macOS and swallows the mouseup, and in practice
+  // it never reliably moved this transparent always-on-top window — so the
+  // chat panel simply couldn't be repositioned. Buttons bail out before the
+  // capture so their clicks still land.
+  const panelDrag = useRef<{ lastX: number; lastY: number } | null>(null);
+
+  function handlePanelPointerDown(e: React.PointerEvent) {
+    if (e.button !== 0) return;
+    if ((e.target as HTMLElement).closest("button, input, textarea, a")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    panelDrag.current = { lastX: e.screenX, lastY: e.screenY };
+  }
+
+  function handlePanelPointerMove(e: React.PointerEvent) {
+    const d = panelDrag.current;
+    if (!d) return;
+    const dx = e.screenX - d.lastX;
+    const dy = e.screenY - d.lastY;
+    if (dx !== 0 || dy !== 0) {
+      nova().orbDragMove(dx, dy);
+      d.lastX = e.screenX;
+      d.lastY = e.screenY;
+    }
+  }
+
+  function handlePanelPointerEnd() {
+    panelDrag.current = null;
   }
 
   // Chrome scales out of the orb's center so expanding reads as the orb
@@ -192,18 +246,18 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
               transformOrigin: `${orbCenterX} ${orbCenterY}`,
             }}
           >
-            {/* Header row, full width for layout — but the actual drag region
-                (inner div below) stops short of the orb's box. Chromium
-                computes -webkit-app-region:"drag" hit-test regions from an
-                element's own CSS geometry across the DOM tree; it does NOT
-                consult paint/z-order, so a drag rectangle swallows mousedowns
-                for any element visually on top of it too, including the orb
-                sibling rendered later/on top of this row. Shrinking the drag
-                element itself so its box never overlaps the orb's box is the
-                only real fix — no-drag only carves out descendants, and the
-                orb isn't one. */}
+            {/* Header row: a manual drag strip (pointer capture + OrbDragMove,
+                same mechanism as the orb) that stops short of the orb's box.
+                Deliberately NOT -webkit-app-region:drag — see the panel-drag
+                handlers above for why native drag regions are off-limits in
+                this window. */}
             <div style={{ height: ORB_BOX_TOP + ORB_BOX, display: "flex", alignItems: "flex-start", boxSizing: "border-box" }}>
               <div
+                onPointerDown={handlePanelPointerDown}
+                onPointerMove={handlePanelPointerMove}
+                onPointerUp={handlePanelPointerEnd}
+                onPointerCancel={handlePanelPointerEnd}
+                title="Drag to move Nova"
                 style={{
                   display: "flex",
                   alignItems: "flex-start",
@@ -211,8 +265,9 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
                   padding: "10px 0 0 10px",
                   boxSizing: "border-box",
                   width: `calc(100% - ${ORB_BOX_RIGHT + ORB_BOX}px)`,
-                  WebkitAppRegion: "drag",
-                } as React.CSSProperties}
+                  height: "100%",
+                  cursor: "grab",
+                }}
               >
                 <ChromeButton label="⚙" title="Open Nova settings" onClick={onExpand} />
                 <ChromeButton label="▴" title="Collapse to orb" onClick={onCollapse} />

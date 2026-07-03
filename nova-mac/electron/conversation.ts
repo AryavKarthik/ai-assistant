@@ -48,10 +48,15 @@ export async function persistUserMessage(
 
   if (error) throw error;
 
-  await supabase
+  // Bumping the conversation's updated_at is bookkeeping — don't hold the
+  // voice turn hostage to a second Supabase round-trip.
+  void supabase
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
-    .eq("id", conversationId);
+    .eq("id", conversationId)
+    .then(({ error: e }) => {
+      if (e) console.error("[conversation] touch updated_at:", e);
+    });
 
   return { id: data.id as string };
 }

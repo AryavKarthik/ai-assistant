@@ -19,13 +19,27 @@ const SQUASH_RATIO = 0.6;
 const IDLE_DECAY_MS = 140;
 
 /** Pure conversion from instantaneous drag velocity (px/ms) to a squash-and-
- *  stretch transform: stretched along the direction of motion, squashed
- *  perpendicular to it, capped so it never exceeds the orb's clipping margin. */
+ *  stretch transform: stretched along the axis of motion, squashed on the
+ *  other axis, capped so it never exceeds the orb's clipping margin.
+ *
+ *  Deliberately axis-aligned with rotate always 0: the old version rotated
+ *  the orb to the motion angle, but atan2 flaps between +180° and −180° on a
+ *  leftward drag (tiny vy sign changes), and the spring animating that jump
+ *  spun the orb through a full turn each time — the "spazzing" wobble. The
+ *  per-axis blend keeps the same horizontal/vertical feel without any
+ *  rotation to flip. */
 export function velocityToWiggle(vx: number, vy: number): OrbWiggle {
   const speed = Math.sqrt(vx * vx + vy * vy);
   const stretch = Math.min(speed * VELOCITY_TO_STRETCH, MAX_STRETCH);
-  const rotate = stretch > 0.01 ? (Math.atan2(vy, vx) * 180) / Math.PI : 0;
-  return { scaleX: 1 + stretch, scaleY: 1 - stretch * SQUASH_RATIO, rotate };
+  if (speed === 0 || stretch === 0) return NEUTRAL_WIGGLE;
+  // Share of the motion on each axis (sums to 1).
+  const wx = (vx * vx) / (speed * speed);
+  const wy = (vy * vy) / (speed * speed);
+  return {
+    scaleX: 1 + stretch * wx - stretch * SQUASH_RATIO * wy,
+    scaleY: 1 + stretch * wy - stretch * SQUASH_RATIO * wx,
+    rotate: 0,
+  };
 }
 
 /**

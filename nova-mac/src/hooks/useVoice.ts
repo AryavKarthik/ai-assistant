@@ -164,11 +164,18 @@ export function useVoice(): {
 
       dispatch({ type: "summon" });
       dispatch({ type: "submit", transcript: text });
-      dispatch({ type: "responseStart" });
       const id = `text-${++reqId.current}`;
 
+      // responseStart waits for the first streamed token: "processing"
+      // (purple) is the visible state while Claude is thinking, and
+      // "responding" (green) only once the reply actually starts.
+      let firstDelta = true;
       const offDelta = nova().onChatDelta((p) => {
         if (p.requestId !== id) return;
+        if (firstDelta) {
+          firstDelta = false;
+          dispatch({ type: "responseStart" });
+        }
         dispatch({ type: "responseDelta", delta: p.delta });
       });
       const offTool = nova().onChatToolUse?.((p) => {
@@ -305,8 +312,12 @@ export function useVoice(): {
       }
       transcript = sanitized;
 
+      // Deliberately no responseStart here: the orb must stay "processing"
+      // (purple) for the whole Claude round-trip. Dispatching responseStart
+      // in the same tick as submit meant React batched blue→purple→green into
+      // a single green paint — purple never showed and the orb sat green for
+      // seconds before any speech, which read as plain broken.
       dispatch({ type: "submit", transcript });
-      dispatch({ type: "responseStart" });
       const id = `turn-${++reqId.current}`;
 
       const speaker = prefs.current.spokenReplies
@@ -345,6 +356,7 @@ export function useVoice(): {
         if (firstDelta) {
           firstDelta = false;
           cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
+          dispatch({ type: "responseStart" }); // purple → green only now
         }
         dispatch({ type: "responseDelta", delta: p.delta });
         speaker?.feed(p.delta);

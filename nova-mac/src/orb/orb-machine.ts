@@ -77,14 +77,16 @@ export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
         : state;
 
     // Turn finished but keep the conversation text on screen (chat panel).
-    // The next summon/submit clears it.
+    // The next summon/submit clears it. "processing" is included because
+    // responseStart now waits for the first streamed token — a turn that ends
+    // without any text (e.g. tool-only) settles straight from processing.
     case "settle":
-      return state.name === "responding" || state.name === "working"
+      return state.name === "processing" || state.name === "responding" || state.name === "working"
         ? { ...state, name: "dormant", workingStep: null }
         : state;
 
     case "bargeIn":
-      return state.name === "responding" || state.name === "working"
+      return state.name === "processing" || state.name === "responding" || state.name === "working"
         ? { ...INITIAL_ORB_STATE, name: "bargeIn" }
         : state;
 
