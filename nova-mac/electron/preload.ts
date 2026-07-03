@@ -60,6 +60,8 @@ contextBridge.exposeInMainWorld("nova", {
     ipcRenderer.on(IpcChannel.OrbExpandedChanged, h);
     return () => ipcRenderer.removeListener(IpcChannel.OrbExpandedChanged, h);
   },
+  orbDragMove: (dx: number, dy: number) =>
+    ipcRenderer.send(IpcChannel.OrbDragMove, { dx, dy }),
   onOrbDragVelocity: (cb: (p: unknown) => void): (() => void) => {
     const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
     ipcRenderer.on(IpcChannel.OrbDragVelocity, h);

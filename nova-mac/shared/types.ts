@@ -34,6 +34,9 @@ export enum IpcChannel {
   OrbExpandedChanged = "orb:expandedChanged",
   /** Main broadcasts live drag velocity while the user is dragging the orb window. */
   OrbDragVelocity = "orb:dragVelocity",
+  /** Renderer streams pointer-drag deltas so main moves the orb window (manual drag —
+   *  a CSS drag region would swallow the mouseup on macOS and break click detection). */
+  OrbDragMove = "orb:dragMove",
   // Preferences push
   PrefsChanged = "prefs:changed",
   // Prefs get/set (used by Settings tab — wired in Task 7)
@@ -129,6 +132,12 @@ export interface TimerFiredEvent {
 export interface OrbDragVelocityEvent {
   vx: number;
   vy: number;
+}
+
+/** Pointer-drag delta (screen px) the renderer asks main to move the orb window by. */
+export interface OrbDragMoveRequest {
+  dx: number;
+  dy: number;
 }
 
 export interface TranscribeRequest {

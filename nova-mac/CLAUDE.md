@@ -75,13 +75,19 @@ with `orbArmedForAutoHide` in `main.ts`:
 custom position is set, main resizes/positions top-right-anchored via `resizeOrb`/
 `positionOrbTopRight` (`window.ts`) and broadcasts `IpcChannel.OrbExpandedChanged`.
 
-**Dragging**: `MiniOrb.tsx` marks its whole window `WebkitAppRegion: "drag"` (Chromium still
-delivers the underlying mousedown/mouseup to React even inside a drag region, so a movement
-threshold in the component tells a click from a drag) and the expanded panel's icon-button strip
-is a drag region too. `main.ts` listens for the window's native `moved` event to detect *real*
-user drags — `orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events
-our own `positionOrbTopRight`/`resizeOrb`/`setPosition` calls trigger, since Electron fires
-`moved` for programmatic changes too and there's no other way to tell them apart. Once a real
+**Dragging**: `MiniOrb.tsx` implements dragging *manually* — pointer capture in the component
+streams screen-space deltas over `IpcChannel.OrbDragMove` and main moves the window with
+`setPosition`. It must NOT use a CSS `-webkit-app-region: drag` region: on macOS a mousedown
+in a drag region is handed to the OS window-drag session and the mouseup never reaches the
+page, which silently breaks click-to-open (this happened once — the movement-threshold
+click/drag disambiguation only works with manual dragging). The expanded panel's icon-button
+strip is still a native drag region (fine there: its buttons are `no-drag` children).
+`main.ts` listens for the window's native `moved` event to detect *real* user drags —
+`orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events our own
+`positionOrbTopRight`/`resizeOrb`/`setPosition` calls trigger, since Electron fires `moved`
+for programmatic changes too and there's no other way to tell them apart. `OrbDragMove`'s
+`setPosition` calls are deliberately *not* suppressed — they're user drags, so `move`/`moved`
+firing for them is what drives the wiggle and persistence below. Once a real
 drag is detected, `orbUserPositioned` flips on and the spot is persisted via
 `electron/orb-position-store.ts` (plain JSON under `userData`, restored on next launch);
 `positionOrb()` becomes a no-op as long as `isPointOnAnyDisplay` says that spot is still on

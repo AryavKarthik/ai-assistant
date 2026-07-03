@@ -22,7 +22,7 @@ import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWi
 import { streamChat, cancelChat } from "./chat";
 import { startSignIn, signOut, getAuthState, handleAuthCallback, restoreSession } from "./auth";
 import { WakeWordController } from "./wakeword/index";
-import { IpcChannel } from "@shared/types";
+import { IpcChannel, type OrbDragMoveRequest } from "@shared/types";
 
 let orbWin: BrowserWindow | null = null;
 let appWin: BrowserWindow | null = null;
@@ -257,6 +257,17 @@ app.whenReady().then(async () => {
       orbWin?.hide();
       orbArmedForAutoHide = false;
     }
+  });
+
+  // Manual orb drag: the renderer streams pointer deltas (MiniOrb.tsx) and we
+  // move the window. Deliberately NOT wrapped in moveOrbProgrammatically — these
+  // are real user drags, so the `move`/`moved` listeners below should fire as
+  // usual (jelly-wiggle velocity + position persistence).
+  ipcMain.on(IpcChannel.OrbDragMove, (_e, { dx, dy }: OrbDragMoveRequest) => {
+    if (!orbWin || orbWin.isDestroyed()) return;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    const [x, y] = orbWin.getPosition();
+    orbWin.setPosition(x + Math.round(dx), y + Math.round(dy), false);
   });
 
   // Session timers (set via the set_timer tool). On fire: notification + orb popup;
