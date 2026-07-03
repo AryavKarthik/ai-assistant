@@ -157,6 +157,14 @@ don't load at startup.
 - `nova://` deep-link protocol: `open-url` routes:
   - `nova://auth-callback` → `handleAuthCallback` (Supabase magic-link)
   - `nova://connections-callback` → `handleConnectionsCallback` (Google OAuth token exchange)
+  - Registration (`app.setAsDefaultProtocolClient`) branches on `process.defaultApp` (true only
+    when unpackaged/dev, i.e. `npm run dev` → `electron .`): passing just `"nova"` in dev
+    registers the scheme against the bare Electron binary with no argument for which app to
+    load, so macOS relaunches plain `.../Electron.app/Contents/MacOS/Electron` with no path when
+    a magic-link/OAuth deep link is clicked — that falls back to Electron's own bundled default
+    app (or its CLI usage text), which silently looks like the login link is broken. Dev mode
+    must pass `process.execPath` + `[resolve(process.argv[1])]` explicitly (Electron's own
+    documented fix for this).
 - The native probe (`electron/native-probe`) is loaded lazily via `bindings` and is **expected
   to fail in dev** (no compiled addon) — that failure is swallowed to one warn line.
 

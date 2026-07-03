@@ -6,7 +6,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: [".env.local", ".env"] });
 
 import { app, BrowserWindow, globalShortcut, ipcMain, Notification } from "electron";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   createOrbWindow,
   createAppWindow,
@@ -111,7 +111,22 @@ function activateOrb(): void {
 
 app.dock?.hide(); // no Dock icon — tray-only
 
-app.setAsDefaultProtocolClient("nova");
+// In dev (unpackaged via `electron .`), setAsDefaultProtocolClient("nova") alone
+// registers the scheme against the bare Electron binary with no argument for
+// which app to load — macOS then relaunches plain
+// ".../Electron.app/Contents/MacOS/Electron" with no path, which falls back to
+// Electron's own bundled default app (or its bare CLI usage text) instead of
+// Nova, and clicking a magic-link/OAuth deep link looks like it's silently
+// broken. process.defaultApp is true only in this unpackaged case; passing
+// process.execPath + the resolved app directory is Electron's documented fix
+// (https://www.electronjs.org/docs/latest/tutorial/launch-app-from-url-in-another-app).
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient("nova", process.execPath, [resolve(process.argv[1]!)]);
+  }
+} else {
+  app.setAsDefaultProtocolClient("nova");
+}
 // macOS delivers deep links via open-url
 app.on("open-url", (event, url) => {
   event.preventDefault();
