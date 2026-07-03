@@ -204,14 +204,22 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   STT hallucinated on background noise/silence — dropped silently, no sound, no chat call.
   `isVoiceStopPhrase()` catches dismissals ("stop", "that'll be all", "thank you very much",
   etc.) — acknowledged with the `gotIt` cue and the turn ends without calling Claude at all.
+  This only stops *listening* (orb-machine `dismiss` → back to idle grey); it deliberately does
+  NOT let a system-triggered popup auto-hide itself afterward the way a natural turn completion
+  would (`nova().orbDisarmAutoHide()` → `IpcChannel.OrbDisarmAutoHide` in `main.ts` clears the
+  hide timer) — saying a kill phrase is the user actively engaging with the orb, not walking
+  away from an unopened wake-word popup, so the orb should stay put.
 - **WebGL VoiceOrb** (`src/components/orb/webgl-voice-orb.ts` + `VoiceOrb.tsx` wrapper): a
-  fluid-noise plasma sphere (ported from a user-supplied reference), 4 color states — idle=blue,
-  thinking=purple, speaking=green, bargein=orange — smoothly lerped (rate 0.22/frame, tuned for
-  snappy but not jarring transitions); idle/speaking are deliberately pushed to opposite ends of
-  the blue↔green hue range (`STATE_COLORS` in `webgl-voice-orb.ts`) — they used to share enough
-  blue that listening vs. speaking was hard to tell apart under the rim/glow's white-mix.
-  `VoiceOrb`'s 6-value `visualMode` collapses onto these 4;
-  `listening` reads as idle. Same external API as the old Canvas2D orb it replaced.
+  fluid-noise plasma sphere (ported from a user-supplied reference), 5 color states — idle=grey
+  (at rest), listening=blue, thinking=purple, speaking=green, bargein=orange — smoothly lerped
+  (rate 0.45/frame — raised from an original 0.22 that still read as sluggish against the
+  actual voice stage). `listening` used to collapse onto idle (reading as the same grey/blue as
+  "just sitting there"); it's now its own distinct color precisely so the orb visibly changes
+  the instant Nova starts actually hearing you, and idle/speaking are pushed to opposite ends of
+  the blue↔green hue range (`STATE_COLORS` in `webgl-voice-orb.ts`) so listening vs. speaking
+  don't wash into each other under the rim/glow's white-mix. `VoiceOrb`'s 6-value `visualMode`
+  collapses onto these 5 (only `processing` folds into `thinking`). Same external API as the
+  old Canvas2D orb it replaced.
 - **Streaming TTS** (`src/voice/player.ts`): a `SentenceBuffer` chunks the streamed reply into
   sentences; chunks are synthesized ahead (prefetch depth 2) and scheduled gaplessly on a
   Web Audio timeline. `stop()`/barge-in aborts in-flight synth + sources.

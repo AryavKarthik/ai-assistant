@@ -269,6 +269,16 @@ app.whenReady().then(async () => {
     }
   });
 
+  // Kill phrase ("stop", "that's all", ...): the renderer already dismisses
+  // the turn/UI on its own (orb-machine "dismiss"); this only prevents the
+  // system-triggered-popup auto-hide from kicking in afterward, since saying
+  // a kill phrase is the user actively engaging with the orb, not walking
+  // away from an unopened wake-word popup.
+  ipcMain.on(IpcChannel.OrbDisarmAutoHide, () => {
+    clearOrbHideTimer();
+    orbArmedForAutoHide = false;
+  });
+
   // Collapsed-mode click-through: the always-panel-sized window must not eat
   // clicks meant for whatever is under its invisible area. The renderer flips
   // this based on hover: ignore (with mousemove forwarding, so hover is still

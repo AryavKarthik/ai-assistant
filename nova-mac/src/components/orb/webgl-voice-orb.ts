@@ -2,20 +2,22 @@
  * WebGLVoiceOrb — a floating, animated WebGL orb for voice-assistant UIs.
  * Ported from the user-supplied orb.js reference (fluid plasma sphere, transparent bg).
  *
- * States: 'idle' (blue, listening/wake) | 'thinking' (purple) | 'speaking' (green)
- * | 'bargein' (orange, user interrupted).
+ * States: 'idle' (grey, at rest) | 'listening' (blue, actively hearing you)
+ * | 'thinking' (purple) | 'speaking' (green) | 'bargein' (orange, user interrupted).
  */
 
-export type OrbVisualState = "idle" | "thinking" | "speaking" | "bargein";
+export type OrbVisualState = "idle" | "listening" | "thinking" | "speaking" | "bargein";
 
 // idle and speaking used to be a cool grey and a teal-leaning green — both
 // carried a similar amount of blue, so under the rim/glow mixing (which
-// blends toward white) they read as near-identical at a glance. idle is now
-// pushed to a clear, saturated blue and speaking's blue channel is cut back
-// to a purer green, maximizing hue separation between "listening" and
-// "speaking" instead of relying on a subtle warm/cool nudge.
+// blends toward white) they read as near-identical at a glance. Blue is now
+// reserved for "listening" specifically (idle/at-rest is neutral grey again),
+// and speaking's blue channel is cut back to a purer green — maximizing hue
+// separation between "listening" and "speaking" instead of relying on a
+// subtle warm/cool nudge.
 const STATE_COLORS: Record<OrbVisualState, [number, number, number]> = {
-  idle: [0.25, 0.5, 0.98],
+  idle: [0.6, 0.61, 0.64],
+  listening: [0.25, 0.5, 0.98],
   thinking: [0.62, 0.36, 1.0],
   speaking: [0.12, 0.92, 0.28],
   bargein: [1.0, 0.55, 0.15],
@@ -31,6 +33,7 @@ interface Motion {
 
 const STATE_MOTION: Record<OrbVisualState, Motion> = {
   idle: { swirl: 0.16, pulseSpeed: 1.2, pulseAmt: 0.05, glow: 1.0, flicker: 0.35 },
+  listening: { swirl: 0.22, pulseSpeed: 1.6, pulseAmt: 0.07, glow: 1.08, flicker: 0.45 },
   thinking: { swirl: 0.46, pulseSpeed: 2.6, pulseAmt: 0.09, glow: 1.15, flicker: 0.55 },
   speaking: { swirl: 0.3, pulseSpeed: 6.0, pulseAmt: 0.16, glow: 1.35, flicker: 0.75 },
   bargein: { swirl: 0.6, pulseSpeed: 8.0, pulseAmt: 0.22, glow: 1.55, flicker: 0.9 },
@@ -38,6 +41,7 @@ const STATE_MOTION: Record<OrbVisualState, Motion> = {
 
 const STATE_BREATHE: Record<OrbVisualState, { duration: number; scale: number }> = {
   idle: { duration: 4.2, scale: 1.02 },
+  listening: { duration: 3.2, scale: 1.024 },
   thinking: { duration: 2.0, scale: 1.028 },
   speaking: { duration: 1.3, scale: 1.016 },
   bargein: { duration: 0.85, scale: 1.035 },
@@ -378,8 +382,9 @@ export class WebGLVoiceOrb {
     this.introProgress += (introTarget - this.introProgress) * 0.12;
 
     // Higher = snappier state-color transitions (0.06 took ~1s to read as
-    // "arrived"; barge-in/thinking need to register almost immediately).
-    const lerp = 0.22;
+    // "arrived"; 0.22 still read as sluggish/laggy against the actual voice
+    // stage — barge-in/thinking/listening need to register almost instantly).
+    const lerp = 0.45;
     for (let i = 0; i < 3; i++) {
       this.curColor[i] += (this.targetColor[i]! - this.curColor[i]!) * lerp;
     }

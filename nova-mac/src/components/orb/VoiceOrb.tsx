@@ -16,11 +16,14 @@ interface VoiceOrbProps {
   size?: number;
 }
 
-// Our 6-state voice machine collapses onto the orb's 4 visual states —
-// "still listening" reads as idle (blue/calm), matching the reference orb's
-// own recommended mapping.
+// Our 6-value voice machine collapses onto the orb's 5 visual states — only
+// "processing" folds into "thinking" (Claude working either way); "listening"
+// gets its own distinct blue rather than reading as plain idle, so the orb
+// visibly changes the moment Nova starts actually hearing you.
 function toOrbState(mode: VoiceVisualMode): OrbVisualState {
   switch (mode) {
+    case "listening":
+      return "listening";
     case "thinking":
     case "processing":
       return "thinking";

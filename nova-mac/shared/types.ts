@@ -42,6 +42,10 @@ export enum IpcChannel {
    *  window must ignore mouse events (with forwarding, for hover detection) except
    *  when the cursor is over the orb. */
   OrbSetMouseIgnore = "orb:setMouseIgnore",
+  /** A kill phrase ("stop", "that's all", ...) ended the turn — stop listening,
+   *  but don't auto-hide a system-triggered popup the way a natural turn
+   *  completion would; the user is actively engaging with the orb. */
+  OrbDisarmAutoHide = "orb:disarmAutoHide",
   // Preferences push
   PrefsChanged = "prefs:changed",
   // Prefs get/set (used by Settings tab — wired in Task 7)

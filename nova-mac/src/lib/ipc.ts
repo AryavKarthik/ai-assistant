@@ -27,6 +27,9 @@ export interface NovaBridge {
   onWakeDetected(cb: () => void): () => void;
   getVoicePreferences(): Promise<import("@shared/types").VoicePreferences>;
   voiceTurnEnded(): void;
+  /** A kill phrase ended the turn — stop listening without letting a
+   *  system-triggered popup auto-hide itself the way a natural completion would. */
+  orbDisarmAutoHide(): void;
   getWindowMode(): Promise<string>;
   /** manual=true for a real user action (click/hotkey) vs a system-driven change (timer notice). */
   orbSetExpanded(on: boolean, manual?: boolean): void;

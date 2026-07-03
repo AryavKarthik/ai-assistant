@@ -292,6 +292,10 @@ export function useVoice(): {
       if (isVoiceStopPhrase(sanitized)) {
         cue("gotIt");
         dispatch({ type: "dismiss" });
+        // Stop listening, don't close the orb: a kill phrase is the user
+        // actively engaging, not walking away, so a system-triggered popup
+        // shouldn't auto-hide the way a natural turn completion would.
+        nova().orbDisarmAutoHide();
         endTurn();
         return;
       }

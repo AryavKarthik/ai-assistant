@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("nova", {
   },
   getVoicePreferences: () => ipcRenderer.invoke(IpcChannel.VoiceGetPreferences),
   voiceTurnEnded: () => ipcRenderer.send(IpcChannel.VoiceTurnEnded),
+  orbDisarmAutoHide: () => ipcRenderer.send(IpcChannel.OrbDisarmAutoHide),
   getWindowMode: (): Promise<string> => ipcRenderer.invoke(IpcChannel.GetWindowMode),
   orbSetExpanded: (on: boolean, manual?: boolean) =>
     ipcRenderer.send(IpcChannel.OrbSetExpanded, on, manual),
