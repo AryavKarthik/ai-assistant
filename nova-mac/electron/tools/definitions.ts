@@ -351,7 +351,7 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "set_timer",
     description:
-      "Set a countdown timer on this Mac. When it fires, the user gets a chime, a macOS notification, and the Nova popup. Use for 'set a timer for 10 minutes', cooking timers, short break timers. For date/time-based tasks use create_reminder instead.",
+      "Set a countdown timer. By default this uses Nova's own reliable timer (chime + macOS notification + Nova popup when it fires) — prefer this. Set in_clock_app: true ONLY when the user explicitly wants it in the macOS Clock app; that drives Clock's UI and needs Accessibility permission (the tool result will say if it's missing). For date/time-based tasks use create_reminder instead.",
     input_schema: {
       type: "object",
       properties: {
@@ -362,6 +362,10 @@ export const TOOL_DEFINITIONS: Tool[] = [
         label: {
           type: "string",
           description: "Short label spoken/shown when the timer fires, e.g. 'Pasta'",
+        },
+        in_clock_app: {
+          type: "boolean",
+          description: "Set the timer inside the macOS Clock app instead of Nova's own timer. Only when the user specifically asks for the Clock app.",
         },
       },
       required: ["duration_seconds"],
@@ -506,6 +510,20 @@ export const TOOL_DEFINITIONS: Tool[] = [
     name: "list_shortcuts",
     description: "List the names of the user's installed macOS Shortcuts.",
     input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "check_mac_permissions",
+    description:
+      "Check whether Nova has macOS Accessibility permission (needed to control apps/browsers via UI scripting — e.g. setting a Clock timer, clicking around in Safari/Chrome). Call this when a UI-automation attempt failed on permissions, or when the user asks why app control isn't working. If not granted, opening the Settings pane is offered.",
+    input_schema: {
+      type: "object",
+      properties: {
+        open_settings: {
+          type: "boolean",
+          description: "If true and permission is missing, open System Settings to the Accessibility pane.",
+        },
+      },
+    },
   },
   {
     name: "composio_search_tools",

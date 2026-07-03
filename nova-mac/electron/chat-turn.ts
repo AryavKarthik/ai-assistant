@@ -69,6 +69,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   run_applescript: "Controlling your Mac…",
   run_shortcut: "Running shortcut…",
   list_shortcuts: "Checking shortcuts…",
+  check_mac_permissions: "Checking permissions…",
   composio_search_tools: "Finding the right tool…",
   composio_execute: "Working in your apps…",
 };

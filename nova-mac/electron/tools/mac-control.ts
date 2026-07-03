@@ -150,6 +150,52 @@ export async function openUrl(url: string): Promise<void> {
   await shell.openExternal(url);
 }
 
+// ─── Permissions ─────────────────────────────────────────────────────────────
+
+/** True when Nova holds macOS Accessibility trust (required for any System
+ *  Events UI scripting: clicking buttons, typing into other apps, driving the
+ *  Clock app). `prompt: true` surfaces the system dialog + Settings deep-link
+ *  the first time. Lazy electron import so vitest can load this module. */
+export async function hasAccessibility(prompt = false): Promise<boolean> {
+  try {
+    const { systemPreferences } = await import("electron");
+    return systemPreferences.isTrustedAccessibilityClient(prompt);
+  } catch {
+    return false;
+  }
+}
+
+/** Opens System Settings straight to a Privacy pane. */
+export async function openPrivacySettings(
+  pane: "Accessibility" | "Automation" = "Accessibility",
+): Promise<void> {
+  const { shell } = await import("electron");
+  await shell.openExternal(
+    `x-apple.systempreferences:com.apple.preference.security?Privacy_${pane}`,
+  );
+}
+
+const ACCESSIBILITY_FIX =
+  "Nova needs macOS Accessibility permission to control apps this way. Grant it " +
+  "in System Settings → Privacy & Security → Accessibility (toggle Nova on — or " +
+  "'Electron' while running in dev), then ask me again. I've opened that pane for you.";
+
+/** Preflight for any UI-scripting automation: if Accessibility isn't granted,
+ *  prompt for it, open the pane, and throw an actionable error instead of
+ *  letting osascript fail with an opaque -1719. */
+async function requireAccessibility(): Promise<void> {
+  if (await hasAccessibility(true)) return;
+  await openPrivacySettings("Accessibility").catch(() => {});
+  throw new Error(ACCESSIBILITY_FIX);
+}
+
+/** Heuristic: does this AppleScript drive another app's UI (needs
+ *  Accessibility) rather than just talk to a scriptable app (needs Automation,
+ *  which prompts on its own)? */
+function usesUiScripting(script: string): boolean {
+  return /\bSystem Events\b/i.test(script) && /\b(keystroke|key code|click|perform action|set value|UI element)\b/i.test(script);
+}
+
 // ─── General automation (AppleScript / Shortcuts) ────────────────────────────
 
 /** Rewrites common macOS automation permission errors into actionable text so
@@ -180,12 +226,71 @@ export async function runAppleScript(
   timeoutMs = 20_000,
 ): Promise<{ output: string }> {
   if (!script.trim()) throw new Error("script is required");
+  // Preflight UI-scripting scripts so a missing Accessibility grant returns an
+  // actionable message (and opens the pane) instead of osascript's opaque
+  // -1719 — the reason "control an app" silently did nothing.
+  if (usesUiScripting(script)) await requireAccessibility();
   try {
     const output = await run("/usr/bin/osascript", ["-e", script], timeoutMs);
     return { output };
   } catch (err) {
     throw explainAutomationError(err);
   }
+}
+
+/**
+ * Sets a countdown timer in the macOS Clock app via System Events UI
+ * scripting. Clock has no AppleScript dictionary and no timer URL scheme, so
+ * driving its UI is the only way to set a timer *inside Clock* specifically.
+ * Requires Accessibility. Returns after starting it.
+ */
+export async function setClockTimer(
+  totalSeconds: number,
+  label?: string,
+): Promise<{ started: true; hours: number; minutes: number; seconds: number }> {
+  await requireAccessibility();
+  const secs = Math.max(1, Math.round(totalSeconds));
+  const hours = Math.floor(secs / 3600);
+  const minutes = Math.floor((secs % 3600) / 60);
+  const seconds = secs % 60;
+  const labelLine = label ? `\n        set value of text field 1 to ${JSON.stringify(label)}` : "";
+
+  // Clock's Timers tab exposes three text fields (hours, minutes, seconds) and
+  // a Start button. Field/button names are stable across recent macOS; the
+  // script selects the Timers tab first, fills the fields, and clicks Start.
+  const script = `
+tell application "Clock" to activate
+delay 0.5
+tell application "System Events"
+  tell process "Clock"
+    set frontmost to true
+    -- Select the Timers tab (toolbar button labelled "Timers").
+    try
+      click (first button of toolbar 1 of window 1 whose description is "Timers")
+    on error
+      try
+        click (first radio button of tab group 1 of window 1 whose title is "Timers")
+      end try
+    end try
+    delay 0.3
+    set tf to text fields of window 1
+    if (count of tf) ≥ 3 then
+      set value of item 1 of tf to "${String(hours)}"
+      set value of item 2 of tf to "${String(minutes)}"
+      set value of item 3 of tf to "${String(seconds)}"${labelLine}
+    end if
+    delay 0.2
+    click (first button of window 1 whose title is "Start")
+  end tell
+end tell
+return "started"
+`;
+  try {
+    await run("/usr/bin/osascript", ["-e", script], 15_000);
+  } catch (err) {
+    throw explainAutomationError(err);
+  }
+  return { started: true, hours, minutes, seconds };
 }
 
 /** Runs a macOS Shortcut by name via the `shortcuts` CLI, optionally passing

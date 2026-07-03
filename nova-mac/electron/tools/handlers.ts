@@ -32,6 +32,9 @@ import {
   runAppleScript,
   runShortcut,
   listShortcuts,
+  setClockTimer,
+  hasAccessibility,
+  openPrivacySettings,
 } from "./mac-control";
 import { getTimerManager } from "../timers";
 
@@ -121,6 +124,8 @@ export async function executeTool(
           return handleRunShortcut(input);
         case "list_shortcuts":
           return listShortcuts() as Promise<Record<string, unknown>>;
+        case "check_mac_permissions":
+          return handleCheckMacPermissions(input);
         case "composio_search_tools":
           return import("./composio").then((m) => m.handleComposioSearchTools(input));
         case "composio_execute":
@@ -559,15 +564,27 @@ function formatRemaining(ms: number): string {
 }
 
 async function handleSetTimer(input: unknown): Promise<Record<string, unknown>> {
-  const { duration_seconds, label } = input as {
+  const { duration_seconds, label, in_clock_app } = input as {
     duration_seconds?: number;
     label?: string;
+    in_clock_app?: boolean;
   };
   if (!duration_seconds || duration_seconds <= 0) {
     return { error: "duration_seconds must be a positive integer" };
   }
   if (duration_seconds > 24 * 60 * 60) {
     return { error: "Timers max out at 24 hours — use create_reminder for longer" };
+  }
+  if (in_clock_app) {
+    const r = await setClockTimer(duration_seconds, label?.trim() || undefined);
+    return {
+      success: true,
+      in_clock_app: true,
+      label: label?.trim() || "Timer",
+      duration: formatRemaining(duration_seconds * 1000),
+      note: `Started a ${formatRemaining(duration_seconds * 1000)} timer in the Clock app.`,
+      ...r,
+    };
   }
   const timer = getTimerManager().set(
     label?.trim() || "Timer",
@@ -648,6 +665,25 @@ async function handleSetScreenBrightness(input: unknown): Promise<Record<string,
     return { success: true, direction, ...result };
   }
   return { error: "level or direction is required" };
+}
+
+async function handleCheckMacPermissions(input: unknown): Promise<Record<string, unknown>> {
+  const { open_settings } = input as { open_settings?: boolean };
+  const accessibility = await hasAccessibility(false);
+  if (!accessibility && open_settings) {
+    await openPrivacySettings("Accessibility").catch(() => {});
+  }
+  return {
+    accessibility_granted: accessibility,
+    ...(accessibility
+      ? { note: "Nova can control apps and browsers." }
+      : {
+          note:
+            "Accessibility is OFF, so controlling apps/browsers won't work. Turn Nova on in " +
+            "System Settings → Privacy & Security → Accessibility (it appears as 'Electron' in dev)." +
+            (open_settings ? " I opened that pane for you." : ""),
+        }),
+  };
 }
 
 async function handleRunAppleScript(input: unknown): Promise<Record<string, unknown>> {
