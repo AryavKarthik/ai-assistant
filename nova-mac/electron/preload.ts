@@ -16,7 +16,8 @@ contextBridge.exposeInMainWorld("nova", {
   transcribe: (req: unknown, provider: unknown) =>
     ipcRenderer.invoke(IpcChannel.VoiceTranscribe, req, provider),
   synthesize: (req: unknown) => ipcRenderer.invoke(IpcChannel.VoiceSynthesize, req),
-  sttStreamStart: () => ipcRenderer.invoke(IpcChannel.SttStreamStart),
+  sttStreamStart: (req: unknown) => ipcRenderer.invoke(IpcChannel.SttStreamStart, req),
+  sttStreamAudio: (buf: ArrayBuffer) => ipcRenderer.send(IpcChannel.SttStreamAudio, buf),
   sttStreamStop: () => ipcRenderer.invoke(IpcChannel.SttStreamStop),
   sttStreamAbort: () => ipcRenderer.send(IpcChannel.SttStreamAbort),
   chatSend: (req: unknown) => ipcRenderer.send(IpcChannel.ChatSend, req),

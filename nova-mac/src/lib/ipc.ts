@@ -51,9 +51,10 @@ export interface NovaBridge {
   onConnectionsCallback(
     cb: (payload: import("@shared/types").ConnectionsCallbackPayload) => void,
   ): () => void;
-  /** Opens a Google streaming STT session (main tees wake-capture PCM into it).
-   *  Resolves false when streaming STT isn't configured. */
-  sttStreamStart(): Promise<boolean>;
+  /** Opens a Google streaming STT session; the renderer then forwards
+   *  native-rate PCM via sttStreamAudio. Resolves false when unconfigured. */
+  sttStreamStart(req: import("@shared/types").SttStreamStartRequest): Promise<boolean>;
+  sttStreamAudio(buf: ArrayBuffer): void;
   /** Half-closes the stream and resolves the final transcript. */
   sttStreamStop(): Promise<string>;
   sttStreamAbort(): void;

@@ -15,9 +15,11 @@ export enum IpcChannel {
   VoiceSynthesize = "voice:synthesize",
   VoiceGetPreferences = "voice:getPreferences",
   VoiceTurnEnded = "voice:turnEnded",
-  // Streaming STT: main tees the wake-capture PCM frames into a Google
-  // streaming recognizer between Start and Stop; Stop resolves the transcript.
+  // Streaming STT: the renderer forwards native-rate PCM frames (from the
+  // capture worklet) over SttStreamAudio between Start and Stop; Stop
+  // resolves the transcript.
   SttStreamStart = "stt:streamStart",
+  SttStreamAudio = "stt:streamAudio",
   SttStreamStop = "stt:streamStop",
   SttStreamAbort = "stt:streamAbort",
   // Chat streaming
@@ -258,6 +260,12 @@ export interface GoogleConnectionStatus {
   calendar: { connected: boolean; email: string | null };
   gmail: { connected: boolean; email: string | null };
   youtube: { connected: boolean; email: string | null };
+}
+
+/** Opens a streaming STT session; audio arrives on SttStreamAudio as Int16
+ *  mono PCM at this rate. */
+export interface SttStreamStartRequest {
+  sampleRateHertz: number;
 }
 
 /** Result of an OAuth deep-link callback, broadcast on ConnectionsCallback. */

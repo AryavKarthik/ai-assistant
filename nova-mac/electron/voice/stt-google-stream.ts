@@ -33,8 +33,10 @@ export function sttStreamActive(): boolean {
   return session !== null;
 }
 
-/** Opens a streaming recognizer. Returns false when GCP voice isn't configured. */
-export function startSttStream(): boolean {
+/** Opens a streaming recognizer for Int16 mono PCM at `sampleRateHertz`
+ *  (the capture's NATIVE rate — no resampling, full mic fidelity).
+ *  Returns false when GCP voice isn't configured. */
+export function startSttStream(sampleRateHertz: number): boolean {
   if (!isGcpVoiceConfigured()) return false;
   abortSttStream(); // never leak a previous session
 
@@ -56,7 +58,7 @@ export function startSttStream(): boolean {
       // which silently forced every turn onto the slow batch fallback.
       config: {
         encoding: "LINEAR16",
-        sampleRateHertz: 16000,
+        sampleRateHertz,
         audioChannelCount: 1,
         languageCode: "en-AU",
         enableAutomaticPunctuation: true,

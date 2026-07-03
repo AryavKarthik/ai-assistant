@@ -5,7 +5,7 @@ import { MicSession } from "../voice/mic-session";
 import { MicAnalyser } from "../voice/mic-analyser";
 import { TtsBargeInListener, ttsBargeInConfigFromSensitivity } from "../voice/tts-barge-in";
 import { VoicePlayer } from "../voice/player";
-import { startWakeCapture } from "../voice/wake-capture";
+import { startWakeCapture, getCaptureSampleRate } from "../voice/wake-capture";
 import { playCue } from "../voice/earcon";
 import { sanitizeTranscript } from "../voice/transcript-filter";
 import { isVoiceStopPhrase } from "../voice/stop-phrases";
@@ -166,6 +166,12 @@ export function useVoice(): {
   /** Consecutive noise/empty listens in conversation mode — quietly re-listen
    *  a couple of times before giving up on the conversation. */
   const consecutiveNoiseTurns = useRef(0);
+  /** Rolling ~0.6s of native-rate PCM frames (from the capture worklet) used
+   *  as pre-roll when a streaming STT session opens, so the first word after
+   *  the wake phrase isn't clipped by the start round-trip. */
+  const sttRing = useRef<ArrayBuffer[]>([]);
+  /** True while native-rate frames should be forwarded to the live session. */
+  const sttForward = useRef(false);
   const sendTextRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
@@ -189,7 +195,15 @@ export function useVoice(): {
       if (cancelledRef.current) return;
       const stream = await mic.current.acquire();
       if (cancelledRef.current) return;
-      stopWake = startWakeCapture(stream, (buf) => nova().sendWakeFrame(buf));
+      stopWake = startWakeCapture(
+        stream,
+        (buf) => nova().sendWakeFrame(buf),
+        (buf) => {
+          sttRing.current.push(buf);
+          if (sttRing.current.length > 8) sttRing.current.shift();
+          if (sttForward.current) nova().sttStreamAudio(buf);
+        },
+      );
 
       idleAnalyser.start(stream, (level) => {
         if (busyRef.current) {
@@ -228,6 +242,11 @@ export function useVoice(): {
       dispatch({ type: "notice", message: `Timer done — ${p.label}` });
       setTimeout(() => dispatch({ type: "dismiss" }), 7000);
     });
+
+    function abortSttStream() {
+      sttForward.current = false;
+      nova().sttStreamAbort();
+    }
 
     function showError(message: string) {
       cue("error");
@@ -314,15 +333,26 @@ export function useVoice(): {
       }
 
       // Kick off streaming STT concurrently (don't delay the VAD/recorder):
-      // main tees the always-on wake-capture PCM frames into a Google
-      // streaming recognizer, so transcription happens WHILE the user talks
-      // and the transcript is ready ~instantly at silence. Attempted whenever
-      // GCP voice is configured (main returns false otherwise) — the
-      // sttProvider preference governs the batch fallback path, which
-      // MediaRecorder keeps capturing for.
-      const streamStartPromise: Promise<boolean> = nova()
-        .sttStreamStart()
-        .catch(() => false);
+      // the capture worklet's native-rate PCM frames stream to Google so
+      // transcription happens WHILE the user talks — at full mic fidelity, no
+      // resampling — and the transcript is ready ~instantly at silence.
+      // Attempted whenever GCP voice is configured (main returns false
+      // otherwise); the sttProvider preference governs the batch fallback
+      // path, which MediaRecorder keeps capturing for.
+      const streamStartPromise: Promise<boolean> = (async () => {
+        const sampleRateHertz = getCaptureSampleRate();
+        if (!sampleRateHertz) return false; // capture fell back to wake-only mode
+        const ok = await nova()
+          .sttStreamStart({ sampleRateHertz })
+          .catch(() => false);
+        if (ok && !cancelledRef.current) {
+          // Pre-roll, then live: the ring holds only pre-start frames and this
+          // flush is synchronous, so ordering to Google stays monotonic.
+          for (const f of sttRing.current) nova().sttStreamAudio(f);
+          sttForward.current = true;
+        }
+        return ok;
+      })();
 
       let recording: RecordResult;
       try {
@@ -340,7 +370,7 @@ export function useVoice(): {
           (l) => setLevel(l),
         );
       } catch {
-        nova().sttStreamAbort();
+        abortSttStream();
         showError("Recording failed");
         endTurn();
         return;
@@ -349,7 +379,7 @@ export function useVoice(): {
       const audio = recording.blob;
       setLevel(0);
       if (cancelledRef.current) {
-        nova().sttStreamAbort();
+        abortSttStream();
         dispatch({ type: "dismiss" });
         return;
       }
@@ -359,7 +389,7 @@ export function useVoice(): {
       // exchanges is normal — quietly listen again instead of erroring out of
       // the conversation.
       if (audio.size < MIN_SPEECH_BLOB_BYTES) {
-        nova().sttStreamAbort();
+        abortSttStream();
         if (
           prefs.current.interactionMode === "conversation" &&
           consecutiveNoiseTurns.current < 2
@@ -379,6 +409,7 @@ export function useVoice(): {
       let transcript = "";
       const streamingStt = await streamStartPromise;
       if (streamingStt) {
+        sttForward.current = false;
         try {
           transcript = await nova().sttStreamStop();
         } catch {
@@ -576,7 +607,7 @@ export function useVoice(): {
     function endTurn() {
       setLevel(0);
       busyRef.current = false;
-      nova().sttStreamAbort(); // idempotent — never leak a recognizer
+      abortSttStream(); // idempotent — never leak a recognizer
       nova().voiceTurnEnded();
     }
 

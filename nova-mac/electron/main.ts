@@ -254,35 +254,24 @@ app.whenReady().then(async () => {
     void import("./chat-turn").then((m) => m.prewarmTurn()).catch(() => {});
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IpcChannel.WakeDetected);
   });
-  // Rolling pre-roll of the last ~0.5s of mic audio (copies — wake.pushFrame
-  // transfers/detaches the original buffers into the worker thread). Fed into
-  // a new STT stream at start so the first word spoken right after the wake
-  // word isn't clipped while the renderer↔main start round-trip completes.
-  const PREROLL_FRAMES = 6; // 6 × 80ms
-  const recentFrames: ArrayBuffer[] = [];
-
   registerWakeBridge({
-    // The renderer streams 16 kHz PCM frames continuously for wake detection;
-    // when a streaming STT session is live the same frames feed Google, so
-    // transcription happens WHILE the user talks (see stt-google-stream.ts).
-    // STT first — pushFrame may transfer (detach) the buffer to the worker.
-    pushFrame: (buf) => {
-      if (sttStream && sttStream.sttStreamActive()) sttStream.pushSttAudio(buf);
-      recentFrames.push(buf.slice(0));
-      if (recentFrames.length > PREROLL_FRAMES) recentFrames.shift();
-      wake.pushFrame(buf);
-    },
+    pushFrame: (buf) => wake.pushFrame(buf),
     setEnabled: (on) => wake.setEnabled(on),
   });
 
-  // Streaming STT session control (renderer voice turns).
-  ipcMain.handle(IpcChannel.SttStreamStart, async () => {
-    sttStream ??= await import("./voice/stt-google-stream");
-    const started = sttStream.startSttStream();
-    if (started) {
-      for (const f of recentFrames) sttStream.pushSttAudio(f);
-    }
-    return started;
+  // Streaming STT session control. The renderer forwards native-rate PCM
+  // frames (straight from the capture worklet, including its own pre-roll)
+  // over SttStreamAudio — full mic fidelity, no resampling.
+  ipcMain.handle(
+    IpcChannel.SttStreamStart,
+    async (_e, req: import("@shared/types").SttStreamStartRequest) => {
+      if (!req?.sampleRateHertz) return false;
+      sttStream ??= await import("./voice/stt-google-stream");
+      return sttStream.startSttStream(req.sampleRateHertz);
+    },
+  );
+  ipcMain.on(IpcChannel.SttStreamAudio, (_e, buf: ArrayBuffer) => {
+    if (sttStream && sttStream.sttStreamActive()) sttStream.pushSttAudio(buf);
   });
   ipcMain.handle(IpcChannel.SttStreamStop, async () => {
     if (!sttStream) return "";
