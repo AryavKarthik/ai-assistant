@@ -24,6 +24,13 @@ export function startWakeCapture(
   let scriptNode: ScriptProcessorNode | null = null;
   let stopped = false;
 
+  // A suspended context produces NO frames — wake word and streaming STT both
+  // go silently dead. Resume eagerly and whenever the state flips.
+  if (ctx.state === "suspended") void ctx.resume().catch(() => {});
+  ctx.onstatechange = () => {
+    if (!stopped && ctx.state === "suspended") void ctx.resume().catch(() => {});
+  };
+
   const workletUrl = URL.createObjectURL(
     new Blob([captureWorkletSource(SAMPLES_PER_FRAME)], { type: "application/javascript" }),
   );
@@ -40,6 +47,7 @@ export function startWakeCapture(
       workletNode.port.onmessage = (e: MessageEvent<ArrayBuffer>) => send(e.data);
       source.connect(workletNode);
       workletNode.connect(ctx.destination);
+      console.log("[wake-capture] AudioWorklet capture active");
     })
     .catch((err) => {
       console.warn("[wake-capture] AudioWorklet unavailable, falling back to ScriptProcessor:", err);

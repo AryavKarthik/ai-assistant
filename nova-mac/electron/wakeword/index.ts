@@ -3,22 +3,26 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const DEBOUNCE_MS = 2000;
-const DEFAULT_THRESHOLD = 0.5;
+const DEFAULT_THRESHOLD = 0.35;
 
 /** Map wakeWordSensitivity (0 strict … 1 sensitive) to a fire threshold.
  *  0.5 (the preference default) resolves to DEFAULT_THRESHOLD.
  *
- *  History: this used to be 0.08…0.02 (default 0.05) — tuned while the wake
- *  worker still processed frames OUT OF ORDER, which scrambled the model's
- *  input and crushed every score toward zero, so only a tiny threshold ever
- *  fired. With inference serialized the engine produces proper openWakeWord
- *  scores (real activations near 1.0; background speech and noise routinely
- *  hit 0.05–0.2), and the old thresholds made the orb activate on practically
- *  anything — the "randomly starts listening" bug. 0.5 is the
- *  openWakeWord-recommended operating point. */
+ *  Tuning history (both failure directions have happened):
+ *  - 0.08…0.02 (default 0.05): tuned while the wake worker processed frames
+ *    OUT OF ORDER and every score was crushed toward zero. After inference
+ *    was serialized, background speech/noise commonly scored 0.05–0.2, so
+ *    the orb fired on practically anything ("randomly starts listening").
+ *  - 0.7…0.3 (default 0.5, openWakeWord's textbook operating point): real
+ *    "hey jarvis" activations on this pipeline/mic land BELOW 0.5, so the
+ *    wake word stopped firing entirely.
+ *  0.55…0.15 (default 0.35) sits between the observed noise band and the
+ *  genuine-activation band. The dev console prints every score above 0.001
+ *  as "[nova] wake score" — say the phrase, read your actual peak, and move
+ *  the Settings sensitivity slider accordingly. */
 export function wakeThresholdFromSensitivity(sensitivity: number): number {
   const s = Math.max(0, Math.min(1, sensitivity));
-  return 0.7 - s * 0.4; // 0.7 (strict) … 0.3 (sensitive)
+  return 0.55 - s * 0.4; // 0.55 (strict) … 0.15 (sensitive)
 }
 
 export class WakeWordController {
@@ -40,6 +44,7 @@ export class WakeWordController {
 
   setThreshold(threshold: number): void {
     this.threshold = threshold;
+    console.log("[nova] wake threshold set to", threshold.toFixed(3));
   }
 
   start(onWake: () => void): void {
