@@ -15,6 +15,11 @@ export enum IpcChannel {
   VoiceSynthesize = "voice:synthesize",
   VoiceGetPreferences = "voice:getPreferences",
   VoiceTurnEnded = "voice:turnEnded",
+  // Streaming STT: main tees the wake-capture PCM frames into a Google
+  // streaming recognizer between Start and Stop; Stop resolves the transcript.
+  SttStreamStart = "stt:streamStart",
+  SttStreamStop = "stt:streamStop",
+  SttStreamAbort = "stt:streamAbort",
   // Chat streaming
   ChatSend = "chat:send",
   ChatDelta = "chat:delta",
@@ -255,6 +260,16 @@ export interface GoogleConnectionStatus {
   youtube: { connected: boolean; email: string | null };
 }
 
+/** Result of an OAuth deep-link callback, broadcast on ConnectionsCallback. */
+export interface ConnectionsCallbackPayload {
+  ok: boolean;
+  service?: GoogleService;
+  /** Human-readable failure description when ok is false. */
+  error?: string;
+  /** Actionable fix steps to surface in the UI. */
+  hint?: string;
+}
+
 export interface ReminderItem {
   id: string;
   title: string;
@@ -275,7 +290,11 @@ export interface MemoryItem {
 export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   interactionMode: "wake_word",
   autoSendOnEndOfTurn: true,
-  silenceMs: 900,
+  // 650ms of silence ends the utterance. 900 read as the assistant "hanging"
+  // after you finished a sentence; with streaming STT the transcript is ready
+  // the moment this fires, so the shorter window is pure win. Raise it in
+  // Settings → Conversation if it cuts you off mid-thought.
+  silenceMs: 650,
   noSpeechTimeoutMs: 5000,
   spokenReplies: true,
   bargeInEnabled: true,

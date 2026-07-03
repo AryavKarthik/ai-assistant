@@ -14,6 +14,7 @@ export function ConnectionsPage() {
   const [status, setStatus] = useState<GoogleConnectionStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<GoogleService | null>(null);
+  const [callbackError, setCallbackError] = useState<{ error: string; hint?: string } | null>(null);
 
   async function load() {
     setLoading(true);
@@ -27,8 +28,17 @@ export function ConnectionsPage() {
 
   useEffect(() => {
     void load();
-    // Refresh when OAuth callback fires
-    const unsub = nova().onConnectionsCallback(() => void load());
+    // Refresh when the OAuth callback fires — and surface failures, which
+    // used to be swallowed silently (a Google consent error just looked like
+    // the Connect button doing nothing).
+    const unsub = nova().onConnectionsCallback((payload) => {
+      if (payload && payload.ok === false) {
+        setCallbackError({ error: payload.error ?? "Connection failed", hint: payload.hint });
+      } else {
+        setCallbackError(null);
+      }
+      void load();
+    });
     return unsub;
   }, []);
 
@@ -63,13 +73,35 @@ export function ConnectionsPage() {
         Connect your Google services so Nova can access your calendar, email, and YouTube taste profile.
       </p>
 
-      <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 p-3 text-xs text-amber-300">
-        <strong>One-time setup required:</strong> Add <code>nova://connections-callback</code> as an
-        authorized redirect URI in your Google OAuth app at{" "}
-        <span className="underline">
-          console.cloud.google.com
-        </span>
-        .
+      {callbackError && (
+        <div className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-300 space-y-1.5">
+          <div>
+            <strong>Connection failed:</strong> {callbackError.error}
+          </div>
+          {callbackError.hint && <div className="text-red-200/90">{callbackError.hint}</div>}
+        </div>
+      )}
+
+      <div className="rounded-xl border border-amber-500/20 bg-amber-500/8 p-3 text-xs text-amber-300 space-y-1.5">
+        <div>
+          <strong>One-time setup required</strong> at{" "}
+          <span className="underline">console.cloud.google.com</span>:
+        </div>
+        <ol className="list-decimal ml-4 space-y-0.5">
+          <li>
+            Add <code>nova://connections-callback</code> as an authorized redirect URI on your
+            OAuth client (APIs &amp; Services → Credentials).
+          </li>
+          <li>
+            If Google shows <em>"Access blocked: app has not completed verification"</em>: open
+            APIs &amp; Services → OAuth consent screen → Audience and add your Google account
+            under <strong>Test users</strong> (or set Publishing status to In production).
+          </li>
+          <li>
+            Enable the <strong>Gmail API</strong> and <strong>Google Calendar API</strong> under
+            APIs &amp; Services → Library.
+          </li>
+        </ol>
       </div>
 
       <div className="space-y-3">

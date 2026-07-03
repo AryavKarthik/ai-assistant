@@ -470,4 +470,76 @@ export const TOOL_DEFINITIONS: Tool[] = [
       required: ["url"],
     },
   },
+  {
+    name: "run_applescript",
+    description:
+      "Run an AppleScript on this Mac to control and navigate WITHIN apps and browsers — not just launch them. Use for anything the dedicated tools can't do: set a timer in the Clock app, create a note in Notes, control Safari/Chrome tabs (open location, read the current tab's URL/title, run JavaScript in a tab), play a playlist in Music, send an iMessage, click UI elements via System Events, etc. Compose the smallest script that does the job and return useful output with `return`. Scripts run with the user's full permissions: never write destructive scripts (deleting files, closing unsaved work) unless the user explicitly asked. If the result mentions a missing Accessibility/Automation permission, relay those exact fix steps to the user.",
+    input_schema: {
+      type: "object",
+      properties: {
+        script: {
+          type: "string",
+          description: "The complete AppleScript source to execute",
+        },
+        purpose: {
+          type: "string",
+          description: "One short sentence describing what this script does (shown in logs)",
+        },
+      },
+      required: ["script"],
+    },
+  },
+  {
+    name: "run_shortcut",
+    description:
+      "Run one of the user's macOS Shortcuts by exact name, optionally passing text input. Use list_shortcuts first if unsure of the name. Shortcuts are often the most reliable way to do things AppleScript can't (e.g. actions from sandboxed apps).",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Exact Shortcut name" },
+        input: { type: "string", description: "Optional text input passed to the shortcut" },
+      },
+      required: ["name"],
+    },
+  },
+  {
+    name: "list_shortcuts",
+    description: "List the names of the user's installed macOS Shortcuts.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "composio_search_tools",
+    description:
+      "Search the user's Composio-connected apps (Google Docs, Notion, Slack, ...) for actions matching a task, e.g. query 'create google doc'. Returns action slugs + descriptions. Use before composio_execute when you don't know the exact action slug. Pass include_schemas: true only when you need the argument schema.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What you want to do, e.g. 'append text to google doc'" },
+        toolkit: { type: "string", description: "Optional app filter, e.g. 'googledocs', 'notion'" },
+        limit: { type: "integer", description: "Max results (default 10)" },
+        include_schemas: { type: "boolean", description: "Include input parameter schemas (verbose)" },
+      },
+    },
+  },
+  {
+    name: "composio_execute",
+    description:
+      "Execute a Composio action by slug (from composio_search_tools), e.g. GOOGLEDOCS_CREATE_DOCUMENT with arguments {title, text}. If it errors about missing arguments, search again with include_schemas: true to get the schema. If it errors that the app isn't connected, tell the user to connect it at app.composio.dev.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tool_slug: { type: "string", description: "Action slug, e.g. GOOGLEDOCS_CREATE_DOCUMENT" },
+        arguments: { type: "object", description: "Action arguments per its schema" },
+      },
+      required: ["tool_slug"],
+    },
+  },
 ];
+
+/** Tool list actually offered to Claude: Composio meta-tools are hidden until
+ *  COMPOSIO_API_KEY is configured, so the model never wanders into a bridge
+ *  that can only error. */
+export function getToolDefinitions(): Tool[] {
+  if (process.env.COMPOSIO_API_KEY?.trim()) return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.filter((t) => !t.name.startsWith("composio_"));
+}

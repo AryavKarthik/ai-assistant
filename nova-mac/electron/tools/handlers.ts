@@ -29,6 +29,9 @@ import {
   openApp,
   quitApp,
   openUrl,
+  runAppleScript,
+  runShortcut,
+  listShortcuts,
 } from "./mac-control";
 import { getTimerManager } from "../timers";
 
@@ -112,6 +115,16 @@ export async function executeTool(
           return getSystemVolume() as Promise<Record<string, unknown>>;
         case "set_screen_brightness":
           return handleSetScreenBrightness(input);
+        case "run_applescript":
+          return handleRunAppleScript(input);
+        case "run_shortcut":
+          return handleRunShortcut(input);
+        case "list_shortcuts":
+          return listShortcuts() as Promise<Record<string, unknown>>;
+        case "composio_search_tools":
+          return import("./composio").then((m) => m.handleComposioSearchTools(input));
+        case "composio_execute":
+          return import("./composio").then((m) => m.handleComposioExecute(input));
         default:
           return { error: `Unknown tool: ${name}` };
       }
@@ -635,6 +648,21 @@ async function handleSetScreenBrightness(input: unknown): Promise<Record<string,
     return { success: true, direction, ...result };
   }
   return { error: "level or direction is required" };
+}
+
+async function handleRunAppleScript(input: unknown): Promise<Record<string, unknown>> {
+  const { script, purpose } = input as { script?: string; purpose?: string };
+  if (!script?.trim()) return { error: "script is required" };
+  if (purpose) console.log("[tools] run_applescript:", purpose);
+  const { output } = await runAppleScript(script);
+  return { success: true, output };
+}
+
+async function handleRunShortcut(input: unknown): Promise<Record<string, unknown>> {
+  const { name, input: shortcutInput } = input as { name?: string; input?: string };
+  if (!name?.trim()) return { error: "name is required" };
+  const { output } = await runShortcut(name.trim(), shortcutInput);
+  return { success: true, output };
 }
 
 async function handleRecommendYoutube(

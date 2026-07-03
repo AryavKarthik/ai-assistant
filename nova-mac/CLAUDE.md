@@ -192,6 +192,13 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   ──IPC transcribe──▶ electron/voice/stt.ts (OpenAI Whisper/gpt-4o-transcribe, or Google via
     electron/voice/stt-google.ts — V2/Chirp 2 with a V1 fallback, quality tiers in
     shared/google-voices.ts, ported from the web app's lib/voice/stt/google*.ts)
+  streaming STT (when GCP voice is configured): sttStreamStart at recording start — main
+    tees the SAME wake-capture PCM frames into a Google Speech V1 streamingRecognize session
+    (electron/voice/stt-google-stream.ts, model latest_short, one session at a time), so the
+    transcript is ready ~instantly when VAD fires; sttStreamStop resolves it, and the
+    MediaRecorder blob + batch transcribe below stay as the fallback whenever the stream
+    errors or returns empty. sttStreamAbort on every early-exit path (endTurn calls it
+    idempotently).
   sanitizeTranscript() + isVoiceStopPhrase()   // drop hallucinated noise / kill words silently
   orb: submit(transcript) → processing
   ──IPC chatSend──▶ electron/chat.ts (Anthropic streaming) ──ChatDelta/Done/Error──▶
@@ -262,14 +269,27 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
 
 ## Mac control tools
 
-`electron/tools/mac-control.ts` (volume via `osascript`, brightness via the optional
-`brightness` CLI with a System Events key-code fallback, `open -a` for apps,
-`shell.openExternal` for URLs — the `electron` import is lazy so vitest can load the module)
+`electron/tools/mac-control.ts` (volume via `osascript` — set is **verified by reading the
+level back** and throws when the OS didn't apply it; brightness via the optional `brightness`
+CLI with a System Events key-code fallback whose permission failures are rewritten into
+actionable "grant Accessibility / brew install brightness" errors; `open -a` for apps;
+`shell.openExternal` for URLs; plus general automation: `runAppleScript` (arbitrary
+AppleScript via a single execFile `-e` arg, macOS Automation/Accessibility errors rewritten
+to fix instructions) and `runShortcut`/`listShortcuts` (`shortcuts` CLI) — the `electron`
+import is lazy so vitest can load the module)
 plus `electron/timers.ts` (session-scoped `TimerManager`, initialized in `main.ts` with an
 on-fire callback that shows a Notification, summons the orb, and broadcasts
 `IpcChannel.TimerFired`). Exposed to Claude as: `set_timer` / `list_timers` / `cancel_timer`,
 `open_app` / `quit_app` / `open_url`, `set_system_volume` / `get_system_volume`,
-`set_screen_brightness`.
+`set_screen_brightness`, `run_applescript` / `run_shortcut` / `list_shortcuts` (in-app and
+browser navigation — "open Clock and set a 30-minute timer" composes AppleScript).
+`electron/tools/composio.ts` adds `composio_search_tools` / `composio_execute` (Composio REST
+v3 bridge for Google Docs/Notion/etc.); these two are stripped from the tool list by
+`getToolDefinitions()` in `definitions.ts` unless `COMPOSIO_API_KEY` is set — chat-turn.ts
+must always use `getToolDefinitions()`, never raw `TOOL_DEFINITIONS`. The system prompt
+carries a hard tool-result honesty rule (never claim success unless the tool result confirms
+it; relay error fix steps verbatim) because Haiku used to narrate volume/brightness changes
+that had actually failed.
 
 ## Chat turn — memory + history (`electron/chat.ts`)
 
@@ -279,7 +299,12 @@ on-fire callback that shows a Notification, summons the orb, and broadcasts
 - Runs `preRetrieveContext` — hybrid pgvector + `pg_trgm` memory search, calendar, Gmail, reminders
 - Builds system prompt with dynamic memory injection
 - Calls Claude with `MAX_TOOL_ITERATIONS = 3`; tool results feed back into Claude
-- Persists user + assistant messages to Supabase after each turn
+- Persists user + assistant messages to Supabase after each turn (the user-message persist
+  runs in parallel with history/retrieval/timezone, deduped by id; `updated_at` bump is
+  fire-and-forget)
+- `prewarmTurn()` is called from main.ts the moment the wake word fires — warms the
+  userId/conversation/timezone caches while the user is still speaking
+- Voice turns route through `inferComplexity` like text (no longer pinned to the light model)
 - **Never `select("embedding")`** — memory queries always use an explicit column list
 
 ## App window — tabs (`src/AppShell.tsx`)
@@ -308,8 +333,12 @@ One row per user in `google_oauth_tokens`. Columns: `encrypted_refresh` (AES-256
 
 Flow: `startOAuthFlow` → `shell.openExternal(url)` → user authenticates → macOS delivers
 `nova://connections-callback` → `handleConnectionsCallback` exchanges code, encrypts refresh
-token, upserts row, sends `IpcChannel.ConnectionsCallback` to app window → `ConnectionsPage`
-refreshes status.
+token, upserts row, sends `IpcChannel.ConnectionsCallback` **with a
+`ConnectionsCallbackPayload` (`{ok, service?, error?, hint?}`)** to the app window →
+`ConnectionsPage` refreshes status and surfaces failures in a red banner. Google's
+`?error=access_denied` redirect (user cancelled OR unverified-app block) used to be silently
+swallowed — it now maps to a hint telling the user to add themselves as a Test user /
+publish the app and enable the Gmail+Calendar APIs in console.cloud.google.com.
 
 **One-time setup**: add `nova://connections-callback` as an authorized redirect URI in your
 Google OAuth 2.0 client at console.cloud.google.com. Requires `GOOGLE_CLIENT_ID`,

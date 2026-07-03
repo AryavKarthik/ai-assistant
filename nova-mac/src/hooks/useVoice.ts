@@ -232,6 +232,17 @@ export function useVoice(): {
         return;
       }
 
+      // Kick off streaming STT concurrently (don't delay the VAD/recorder):
+      // main tees the always-on wake-capture PCM frames into a Google
+      // streaming recognizer, so transcription happens WHILE the user talks
+      // and the transcript is ready ~instantly at silence. Attempted whenever
+      // GCP voice is configured (main returns false otherwise) — the
+      // sttProvider preference governs the batch fallback path, which
+      // MediaRecorder keeps capturing for.
+      const streamStartPromise: Promise<boolean> = nova()
+        .sttStreamStart()
+        .catch(() => false);
+
       let audio: Blob;
       try {
         audio = await recordUntilSilence(
@@ -244,17 +255,20 @@ export function useVoice(): {
           (l) => setLevel(l),
         );
       } catch {
+        nova().sttStreamAbort();
         showError("Recording failed");
         endTurn();
         return;
       }
       setLevel(0);
       if (cancelledRef.current) {
+        nova().sttStreamAbort();
         dispatch({ type: "dismiss" });
         return;
       }
 
       if (audio.size === 0) {
+        nova().sttStreamAbort();
         showError("Nothing heard");
         endTurn();
         return;
@@ -264,20 +278,30 @@ export function useVoice(): {
       cue("gotIt");
 
       let transcript = "";
-      try {
-        const audioBase64 = await blobToBase64(audio);
-        transcript = await nova().transcribe(
-          {
-            audioBase64,
-            mimeType: audio.type || "audio/webm",
-            googleSttQuality: prefs.current.googleSttQuality,
-          },
-          prefs.current.sttProvider,
-        );
-      } catch {
-        showError("Transcription failed");
-        endTurn();
-        return;
+      const streamingStt = await streamStartPromise;
+      if (streamingStt) {
+        try {
+          transcript = await nova().sttStreamStop();
+        } catch {
+          transcript = ""; // fall through to the batch path below
+        }
+      }
+      if (!transcript) {
+        try {
+          const audioBase64 = await blobToBase64(audio);
+          transcript = await nova().transcribe(
+            {
+              audioBase64,
+              mimeType: audio.type || "audio/webm",
+              googleSttQuality: prefs.current.googleSttQuality,
+            },
+            prefs.current.sttProvider,
+          );
+        } catch {
+          showError("Transcription failed");
+          endTurn();
+          return;
+        }
       }
 
       if (!transcript) {
@@ -431,6 +455,7 @@ export function useVoice(): {
     function endTurn() {
       setLevel(0);
       busyRef.current = false;
+      nova().sttStreamAbort(); // idempotent — never leak a recognizer
       nova().voiceTurnEnded();
     }
 

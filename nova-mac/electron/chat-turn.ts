@@ -14,7 +14,7 @@ import {
   autoCaptureFromMessage,
   resolveAssistantText,
 } from "./memory/index";
-import { TOOL_DEFINITIONS } from "./tools/definitions";
+import { getToolDefinitions } from "./tools/definitions";
 import { executeTool, type ToolContext } from "./tools/handlers";
 import {
   getOrCreateConversation,
@@ -66,6 +66,11 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   set_system_volume: "Adjusting volume…",
   get_system_volume: "Checking volume…",
   set_screen_brightness: "Adjusting brightness…",
+  run_applescript: "Controlling your Mac…",
+  run_shortcut: "Running shortcut…",
+  list_shortcuts: "Checking shortcuts…",
+  composio_search_tools: "Finding the right tool…",
+  composio_execute: "Working in your apps…",
 };
 
 function toolStepLabel(name: string): string {
@@ -83,6 +88,21 @@ function client(): Anthropic {
 }
 
 const inFlight = new Map<string, AbortController>();
+
+/** Warms the per-turn caches (auth user, conversation id, timezone) while the
+ *  user is still speaking — called from main on wake detection so the first
+ *  reply doesn't pay cold Supabase round-trips. All three memoize internally. */
+export async function prewarmTurn(): Promise<void> {
+  try {
+    const userId = await getUserId();
+    await Promise.all([
+      getOrCreateConversation(userId),
+      resolveUserTimezoneCached(userId),
+    ]);
+  } catch (err) {
+    console.warn("[turn] prewarm skipped:", err instanceof Error ? err.message : err);
+  }
+}
 
 export function cancelTurn(requestId: string): void {
   inFlight.get(requestId)?.abort();
@@ -138,7 +158,10 @@ export async function streamTurn(
     let plan = resolveRetrievalPlan("main", intent);
     if (isVoice) plan = applyMacVoiceOverrides(plan);
 
-    const complexity = isVoice ? "light" : inferComplexity(transcript);
+    // Voice used to be pinned to the light model; letting genuinely complex
+    // spoken asks route to the heavy model makes voice answers as smart as
+    // typed ones — the streaming STT path buys back the extra first-token time.
+    const complexity = inferComplexity(transcript);
     const model = complexity === "heavy" ? HEAVY_MODEL : LIGHT_MODEL;
     const maxIterations = isVoice
       ? MAX_TOOL_ITERATIONS_VOICE
@@ -188,7 +211,7 @@ export async function streamTurn(
           max_tokens: maxTokens,
           system,
           messages,
-          tools: TOOL_DEFINITIONS,
+          tools: getToolDefinitions(),
         },
         { signal: controller.signal },
       );

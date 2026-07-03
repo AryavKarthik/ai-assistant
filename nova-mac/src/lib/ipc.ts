@@ -48,7 +48,15 @@ export interface NovaBridge {
   connectionsStatus(): Promise<unknown>;
   connectionsConnect(req: unknown): Promise<void>;
   connectionsDisconnect(req: unknown): Promise<void>;
-  onConnectionsCallback(cb: () => void): () => void;
+  onConnectionsCallback(
+    cb: (payload: import("@shared/types").ConnectionsCallbackPayload) => void,
+  ): () => void;
+  /** Opens a Google streaming STT session (main tees wake-capture PCM into it).
+   *  Resolves false when streaming STT isn't configured. */
+  sttStreamStart(): Promise<boolean>;
+  /** Half-closes the stream and resolves the final transcript. */
+  sttStreamStop(): Promise<string>;
+  sttStreamAbort(): void;
   youtubeRefreshTaste(): Promise<void>;
   remindersGet(): Promise<unknown>;
   remindersDone(id: string): Promise<void>;

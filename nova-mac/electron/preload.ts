@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("nova", {
   transcribe: (req: unknown, provider: unknown) =>
     ipcRenderer.invoke(IpcChannel.VoiceTranscribe, req, provider),
   synthesize: (req: unknown) => ipcRenderer.invoke(IpcChannel.VoiceSynthesize, req),
+  sttStreamStart: () => ipcRenderer.invoke(IpcChannel.SttStreamStart),
+  sttStreamStop: () => ipcRenderer.invoke(IpcChannel.SttStreamStop),
+  sttStreamAbort: () => ipcRenderer.send(IpcChannel.SttStreamAbort),
   chatSend: (req: unknown) => ipcRenderer.send(IpcChannel.ChatSend, req),
   chatCancel: (requestId: string) => ipcRenderer.send(IpcChannel.ChatCancel, requestId),
   onChatDelta: (cb: (p: unknown) => void): (() => void) => {
@@ -82,8 +85,8 @@ contextBridge.exposeInMainWorld("nova", {
   connectionsStatus: () => ipcRenderer.invoke(IpcChannel.ConnectionsStatus),
   connectionsConnect: (req: unknown) => ipcRenderer.invoke(IpcChannel.ConnectionsConnect, req),
   connectionsDisconnect: (req: unknown) => ipcRenderer.invoke(IpcChannel.ConnectionsDisconnect, req),
-  onConnectionsCallback: (cb: () => void): (() => void) => {
-    const h = () => cb();
+  onConnectionsCallback: (cb: (payload: unknown) => void): (() => void) => {
+    const h = (_e: unknown, payload: unknown) => cb(payload);
     ipcRenderer.on(IpcChannel.ConnectionsCallback, h);
     return () => ipcRenderer.removeListener(IpcChannel.ConnectionsCallback, h);
   },

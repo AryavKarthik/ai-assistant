@@ -30,6 +30,7 @@ vi.mock("./tools/handlers", () => ({
 
 vi.mock("./tools/definitions", () => ({
   TOOL_DEFINITIONS: [],
+  getToolDefinitions: () => [],
 }));
 
 // Mock Anthropic client

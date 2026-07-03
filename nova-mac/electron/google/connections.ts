@@ -18,6 +18,21 @@ export async function startOAuthFlow(service: GoogleService): Promise<void> {
   await shell.openExternal(url);
 }
 
+const UNVERIFIED_APP_HINT =
+  "Google is blocking sign-in because the OAuth app is unverified. Fix in " +
+  "console.cloud.google.com → APIs & Services → OAuth consent screen: either " +
+  "add your Google account under Test users (Audience section), or set " +
+  "Publishing status to In production. Also confirm the Gmail API and Google " +
+  "Calendar API are enabled under APIs & Services → Library.";
+
+function notify(
+  appWin: BrowserWindow | null,
+  payload: import("@shared/types").ConnectionsCallbackPayload,
+): void {
+  if (!payload.ok) console.error("[connections] OAuth callback failed:", payload.error);
+  appWin?.webContents.send(IpcChannel.ConnectionsCallback, payload);
+}
+
 export async function handleConnectionsCallback(
   url: string,
   appWin: BrowserWindow | null,
@@ -25,17 +40,61 @@ export async function handleConnectionsCallback(
   const parsed = new URL(url);
   const code = parsed.searchParams.get("code");
   const state = parsed.searchParams.get("state");
-  if (!code || !state) return;
+  const oauthError = parsed.searchParams.get("error");
 
-  const pending = pendingStates.get(state);
-  if (!pending) return;
-  pendingStates.delete(state);
+  const pending = state ? pendingStates.get(state) : undefined;
+  if (state) pendingStates.delete(state);
+  const service = pending?.service;
 
-  const { service } = pending;
+  // Google redirects back with ?error=... when consent fails (access_denied
+  // covers both the user cancelling and the unverified-app block). This used
+  // to silently `return`, which is why reconnecting "just didn't work".
+  if (oauthError) {
+    notify(appWin, {
+      ok: false,
+      service,
+      error: `Google returned "${oauthError}" during consent.`,
+      hint: oauthError === "access_denied" ? UNVERIFIED_APP_HINT : undefined,
+    });
+    return;
+  }
+  if (!code || !state) {
+    notify(appWin, { ok: false, service, error: "Callback was missing the authorization code." });
+    return;
+  }
+  if (!pending || !service) {
+    notify(appWin, {
+      ok: false,
+      error: "Unexpected OAuth callback (no pending connection). Try connecting again.",
+    });
+    return;
+  }
+
+  try {
+    await completeConnection(code, service);
+    notify(appWin, { ok: true, service });
+  } catch (err) {
+    notify(appWin, {
+      ok: false,
+      service,
+      error: err instanceof Error ? err.message : "Connection failed",
+      hint: /access_denied|verification|unverified/i.test(String(err))
+        ? UNVERIFIED_APP_HINT
+        : undefined,
+    });
+  }
+}
+
+async function completeConnection(code: string, service: GoogleService): Promise<void> {
   const tokens = await exchangeCodeForTokens(code, service);
 
   const refreshToken = tokens.refresh_token;
-  if (!refreshToken) return; // no refresh token means we can't persist a long-lived connection
+  if (!refreshToken) {
+    throw new Error(
+      "Google did not return a refresh token. Remove Nova's access at " +
+        "myaccount.google.com/permissions, then connect again.",
+    );
+  }
 
   const supabase = getSupabase();
   const userId = await getUserId();
@@ -69,8 +128,6 @@ export async function handleConnectionsCallback(
     .from("google_oauth_tokens")
     .upsert(row, { onConflict: "user_id" });
   if (error) throw error;
-
-  appWin?.webContents.send(IpcChannel.ConnectionsCallback);
 }
 
 export async function getConnectionsStatus(): Promise<GoogleConnectionStatus> {

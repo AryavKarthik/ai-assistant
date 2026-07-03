@@ -239,15 +239,42 @@ app.whenReady().then(async () => {
   const modelsDir = app.isPackaged
     ? join(process.resourcesPath, "wakeword-models")
     : join(app.getAppPath(), "electron", "wakeword", "models");
+  // Lazy-loaded streaming STT module — declared before the wake bridge so the
+  // pushFrame closure never hits a temporal-dead-zone reference.
+  let sttStream: typeof import("./voice/stt-google-stream") | null = null;
+
   const wake = new WakeWordController(modelsDir);
   wake.start(() => {
     wake.pauseForTurn(); // stop ingesting frames during the voice turn
     activateOrb(); // pop the mini orb in; auto-hides once the turn settles
+    // Prewarm the turn pipeline (auth/conversation/timezone caches) while the
+    // user is still speaking — shaves the cold Supabase round-trips off the
+    // first reply.
+    void import("./chat-turn").then((m) => m.prewarmTurn()).catch(() => {});
     for (const w of BrowserWindow.getAllWindows()) w.webContents.send(IpcChannel.WakeDetected);
   });
   registerWakeBridge({
-    pushFrame: (buf) => wake.pushFrame(buf),
+    // The renderer streams 16 kHz PCM frames continuously for wake detection;
+    // when a streaming STT session is live the same frames feed Google, so
+    // transcription happens WHILE the user talks (see stt-google-stream.ts).
+    pushFrame: (buf) => {
+      wake.pushFrame(buf);
+      if (sttStream && sttStream.sttStreamActive()) sttStream.pushSttAudio(buf);
+    },
     setEnabled: (on) => wake.setEnabled(on),
+  });
+
+  // Streaming STT session control (renderer voice turns).
+  ipcMain.handle(IpcChannel.SttStreamStart, async () => {
+    sttStream ??= await import("./voice/stt-google-stream");
+    return sttStream.startSttStream();
+  });
+  ipcMain.handle(IpcChannel.SttStreamStop, async () => {
+    if (!sttStream) return "";
+    return sttStream.stopSttStream();
+  });
+  ipcMain.on(IpcChannel.SttStreamAbort, () => {
+    sttStream?.abortSttStream();
   });
   // Apply the user's saved wakeWordSensitivity on startup — previously this
   // preference was persisted but never actually read, so the fire threshold
