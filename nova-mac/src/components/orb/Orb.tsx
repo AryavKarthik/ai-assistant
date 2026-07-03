@@ -192,20 +192,31 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
               transformOrigin: `${orbCenterX} ${orbCenterY}`,
             }}
           >
-            {/* Drag strip + minimal icon controls, left of the orb's corner */}
-            <div
-              style={{
-                height: ORB_BOX_TOP + ORB_BOX,
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 4,
-                padding: "10px 0 0 10px",
-                boxSizing: "border-box",
-                WebkitAppRegion: "drag",
-              } as React.CSSProperties}
-            >
-              <ChromeButton label="⚙" title="Open Nova settings" onClick={onExpand} />
-              <ChromeButton label="▴" title="Collapse to orb" onClick={onCollapse} />
+            {/* Header row, full width for layout — but the actual drag region
+                (inner div below) stops short of the orb's box. Chromium
+                computes -webkit-app-region:"drag" hit-test regions from an
+                element's own CSS geometry across the DOM tree; it does NOT
+                consult paint/z-order, so a drag rectangle swallows mousedowns
+                for any element visually on top of it too, including the orb
+                sibling rendered later/on top of this row. Shrinking the drag
+                element itself so its box never overlaps the orb's box is the
+                only real fix — no-drag only carves out descendants, and the
+                orb isn't one. */}
+            <div style={{ height: ORB_BOX_TOP + ORB_BOX, display: "flex", alignItems: "flex-start", boxSizing: "border-box" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 4,
+                  padding: "10px 0 0 10px",
+                  boxSizing: "border-box",
+                  width: `calc(100% - ${ORB_BOX_RIGHT + ORB_BOX}px)`,
+                  WebkitAppRegion: "drag",
+                } as React.CSSProperties}
+              >
+                <ChromeButton label="⚙" title="Open Nova settings" onClick={onExpand} />
+                <ChromeButton label="▴" title="Collapse to orb" onClick={onCollapse} />
+              </div>
             </div>
 
             <AnimatePresence>

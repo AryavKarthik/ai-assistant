@@ -92,7 +92,17 @@ box streams screen-space deltas over `IpcChannel.OrbDragMove` and main moves the
 in a drag region is handed to the OS window-drag session and the mouseup never reaches the
 page, which silently breaks click-to-open (this happened once — the movement-threshold
 click/drag disambiguation only works with manual dragging). The expanded panel's icon-button
-strip is still a native drag region (fine there: its buttons are `no-drag` children).
+strip is still a native drag region (fine there: its buttons are `no-drag` children) — but its
+own geometry is shrunk to stop short of the orb's box (`width: calc(100% - ORB_BOX_RIGHT -
+ORB_BOX)`), NOT left full-width. Chromium computes `-webkit-app-region:"drag"` hit-test regions
+purely from an element's own CSS box geometry across the DOM tree; it does **not** consult
+paint/z-order. A drag rectangle swallows mousedowns for anything visually on top of it too — a
+later sibling painting over that rectangle (like the orb, pinned in the same corner the header
+row spans) does not "win" the click just because it's on top in the DOM/paint order. Only actual
+`no-drag` *descendants* of a drag element carve out exceptions; an unrelated overlapping sibling
+does not. This broke click-to-collapse once (orb painted over the header row, clicks fell into
+the OS drag session instead of the orb) — the fix is shrinking the drag element's own box so it
+never geometrically overlaps the orb's box, not relying on stacking order.
 `main.ts` listens for the window's native `moved` event to detect *real* user drags —
 `orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events our own
 `positionOrbTopRight`/`setPosition` calls trigger, since Electron fires `moved`
