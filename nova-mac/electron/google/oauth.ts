@@ -7,11 +7,14 @@ import {
 import type { GoogleService } from "./scopes";
 import { mergeScopes } from "./scopes";
 
-export function createOAuth2Client(service: GoogleService = "calendar") {
+export function createOAuth2Client(
+  service: GoogleService = "calendar",
+  redirectUri?: string,
+) {
   return new google.auth.OAuth2(
     getGoogleClientId(),
     getGoogleClientSecret(),
-    getRedirectUriForService(service),
+    redirectUri ?? getRedirectUriForService(service),
   );
 }
 
@@ -19,8 +22,9 @@ export function buildServiceAuthUrl(
   service: GoogleService,
   state: string,
   existingScopes: string[] = [],
+  redirectUri?: string,
 ): string {
-  const oauth2 = createOAuth2Client(service);
+  const oauth2 = createOAuth2Client(service, redirectUri);
   const scopes = mergeScopes(existingScopes, service);
 
   return oauth2.generateAuthUrl({
@@ -35,8 +39,11 @@ export function buildServiceAuthUrl(
 export async function exchangeCodeForTokens(
   code: string,
   service: GoogleService,
+  // Must match the redirect_uri the auth URL was built with, or Google
+  // rejects the exchange with redirect_uri_mismatch.
+  redirectUri?: string,
 ) {
-  const oauth2 = createOAuth2Client(service);
+  const oauth2 = createOAuth2Client(service, redirectUri);
   const { tokens } = await oauth2.getToken(code);
   return tokens;
 }

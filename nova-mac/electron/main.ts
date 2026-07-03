@@ -211,9 +211,10 @@ app.whenReady().then(async () => {
     import("./google/connections").then((m) => m.getConnectionsStatus()),
   );
   ipcMain.handle(IpcChannel.ConnectionsConnect, (_e, req: { service: string }) =>
-    import("./google/connections").then((m) =>
-      m.startOAuthFlow(req.service as import("./google/scopes").GoogleService),
-    ),
+    import("./google/connections").then((m) => {
+      m.setConnectionsAppWindowGetter(() => appWin);
+      return m.startOAuthFlow(req.service as import("./google/scopes").GoogleService);
+    }),
   );
   ipcMain.handle(IpcChannel.ConnectionsDisconnect, (_e, req: { service: string }) =>
     import("./google/connections").then((m) =>

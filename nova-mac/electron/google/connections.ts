@@ -1,5 +1,7 @@
 import { shell, type BrowserWindow } from "electron";
 import crypto from "node:crypto";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import { getSupabase } from "../supabase";
 import { getUserId } from "../memory/client";
 import { buildServiceAuthUrl, exchangeCodeForTokens, getGoogleAccountEmail } from "./oauth";
@@ -11,11 +13,70 @@ import { IpcChannel } from "@shared/types";
 
 const pendingStates = new Map<string, { service: GoogleService }>();
 
+/** Set by main.ts so loopback callbacks can notify the app window. */
+let appWinGetter: () => BrowserWindow | null = () => null;
+export function setConnectionsAppWindowGetter(getter: () => BrowserWindow | null): void {
+  appWinGetter = getter;
+}
+
+let activeLoopbackServer: http.Server | null = null;
+const LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000;
+
+function loopbackHtml(title: string, body: string): string {
+  return `<!doctype html><meta charset="utf-8"><title>${title}</title><body style="font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:90vh"><div style="text-align:center;max-width:26rem"><h2>${title}</h2><p>${body}</p></div></body>`;
+}
+
+/**
+ * OAuth via the loopback flow: a one-shot local HTTP server on 127.0.0.1
+ * receives Google's redirect. Google refuses custom schemes like nova:// as
+ * redirect URIs in the Cloud Console ("not a valid URL"), but Desktop-app
+ * OAuth clients accept ANY http://127.0.0.1:<port> redirect with nothing to
+ * register — so this needs zero console configuration.
+ */
 export async function startOAuthFlow(service: GoogleService): Promise<void> {
+  // One flow at a time — a stale listener would swallow the new callback.
+  activeLoopbackServer?.close();
+  activeLoopbackServer = null;
+
   const state = crypto.randomUUID();
   pendingStates.set(state, { service });
-  const url = buildServiceAuthUrl(service, state);
-  await shell.openExternal(url);
+
+  const server = http.createServer();
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => resolve());
+  });
+  const port = (server.address() as AddressInfo).port;
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+  activeLoopbackServer = server;
+
+  const timeout = setTimeout(() => {
+    server.close();
+    if (activeLoopbackServer === server) activeLoopbackServer = null;
+    pendingStates.delete(state);
+  }, LOOPBACK_TIMEOUT_MS);
+
+  server.on("request", (req, res) => {
+    const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`);
+    if (url.pathname !== "/callback") {
+      res.writeHead(404).end();
+      return;
+    }
+    const ok = !url.searchParams.get("error") && url.searchParams.get("code");
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    res.end(
+      ok
+        ? loopbackHtml("Connected to Nova", "You can close this tab and return to Nova.")
+        : loopbackHtml("Connection failed", "Google reported an error — check the Connections tab in Nova for details."),
+    );
+    clearTimeout(timeout);
+    server.close();
+    if (activeLoopbackServer === server) activeLoopbackServer = null;
+    void processCallbackParams(url.searchParams, appWinGetter(), redirectUri);
+  });
+
+  const authUrl = buildServiceAuthUrl(service, state, [], redirectUri);
+  await shell.openExternal(authUrl);
 }
 
 const UNVERIFIED_APP_HINT =
@@ -33,14 +94,22 @@ function notify(
   appWin?.webContents.send(IpcChannel.ConnectionsCallback, payload);
 }
 
+/** Legacy nova:// deep-link callback path (pre-loopback flows). */
 export async function handleConnectionsCallback(
   url: string,
   appWin: BrowserWindow | null,
 ): Promise<void> {
-  const parsed = new URL(url);
-  const code = parsed.searchParams.get("code");
-  const state = parsed.searchParams.get("state");
-  const oauthError = parsed.searchParams.get("error");
+  return processCallbackParams(new URL(url).searchParams, appWin);
+}
+
+async function processCallbackParams(
+  params: URLSearchParams,
+  appWin: BrowserWindow | null,
+  redirectUri?: string,
+): Promise<void> {
+  const code = params.get("code");
+  const state = params.get("state");
+  const oauthError = params.get("error");
 
   const pending = state ? pendingStates.get(state) : undefined;
   if (state) pendingStates.delete(state);
@@ -71,7 +140,7 @@ export async function handleConnectionsCallback(
   }
 
   try {
-    await completeConnection(code, service);
+    await completeConnection(code, service, redirectUri);
     notify(appWin, { ok: true, service });
   } catch (err) {
     notify(appWin, {
@@ -85,8 +154,12 @@ export async function handleConnectionsCallback(
   }
 }
 
-async function completeConnection(code: string, service: GoogleService): Promise<void> {
-  const tokens = await exchangeCodeForTokens(code, service);
+async function completeConnection(
+  code: string,
+  service: GoogleService,
+  redirectUri?: string,
+): Promise<void> {
+  const tokens = await exchangeCodeForTokens(code, service, redirectUri);
 
   const refreshToken = tokens.refresh_token;
   if (!refreshToken) {

@@ -52,7 +52,7 @@ ANTHROPIC_MODEL_LIGHT=         # default: claude-haiku-4-5-20251001
 OPENAI_STT_MODEL=              # default: gpt-4o-transcribe
 ```
 
-**Google OAuth setup (one-time):** Add `nova://connections-callback` as an authorized redirect URI in your OAuth 2.0 client at [console.cloud.google.com](https://console.cloud.google.com). Client type must be "Desktop app" or allow custom URI schemes.
+**Google OAuth setup (one-time):** Create an OAuth 2.0 client of type **Desktop app** at [console.cloud.google.com](https://console.cloud.google.com) (APIs & Services → Credentials) and put its id/secret in `.env.local`. **No redirect URI is registered** — the console rejects custom schemes like `nova://` as "not a valid URL", so Nova uses the loopback flow instead: connecting starts a one-shot local server on `127.0.0.1` and Google redirects there, which Desktop-app clients accept without any configuration.
 
 **"Access blocked: app has not completed verification":** Google blocks consent for unverified OAuth apps. In [console.cloud.google.com](https://console.cloud.google.com) → APIs & Services → OAuth consent screen → Audience, add your own Google account under **Test users** (or set Publishing status to *In production*). Also make sure the **Gmail API** and **Google Calendar API** are enabled under APIs & Services → Library. Reconnect from the Connections tab afterwards — failures now show the exact error there instead of failing silently.
 

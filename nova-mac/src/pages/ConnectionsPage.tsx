@@ -89,8 +89,10 @@ export function ConnectionsPage() {
         </div>
         <ol className="list-decimal ml-4 space-y-0.5">
           <li>
-            Add <code>nova://connections-callback</code> as an authorized redirect URI on your
-            OAuth client (APIs &amp; Services → Credentials).
+            Create an OAuth client of type <strong>Desktop app</strong> (APIs &amp; Services →
+            Credentials) and put its id/secret in <code>.env.local</code>. No redirect URI needs
+            to be registered — Nova receives the callback on a temporary local
+            (<code>127.0.0.1</code>) page.
           </li>
           <li>
             If Google shows <em>"Access blocked: app has not completed verification"</em>: open
