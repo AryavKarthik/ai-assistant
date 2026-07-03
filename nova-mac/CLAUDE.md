@@ -226,8 +226,15 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   each tool round; `useVoice` dispatches `startWorking` so the orb shows the friendly step label
   (labels in `TOOL_STEP_LABELS`, `electron/chat-turn.ts`). The next `ChatDelta` auto-returns
   the reducer from `working` to `responding`.
-- **Recording**: `recordUntilSilence` gives up after 6s of no speech (empty blob → "Nothing
-  heard" without an STT round-trip); speech threshold derives from `listeningSensitivity`.
+- **Recording**: `recordUntilSilence` gives up after `prefs.noSpeechTimeoutMs` (Settings →
+  Conversation → "Give up after", default 5s) of no speech (empty blob → "Nothing heard"
+  without an STT round-trip, and the turn ends outright rather than retrying); speech threshold
+  derives from `listeningSensitivity`. STT requests deliberately send **no** `prompt` hint to
+  OpenAI (`electron/voice/stt.ts`) — an earlier "casual spoken commands and questions to a
+  personal AI assistant" prompt biased the model's hallucinations on silence/background noise
+  toward exactly that genre (fabricated "what's the weather" / "play music on Spotify" style
+  text), which combined with `interactionMode: "conversation"` auto-re-listening after every
+  reply into a self-talking loop with no real user input.
 
 ## Mac control tools
 

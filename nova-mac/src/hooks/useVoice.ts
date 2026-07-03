@@ -12,8 +12,8 @@ import { isVoiceStopPhrase } from "../voice/stop-phrases";
 import { nova } from "../lib/ipc";
 import { DEFAULT_VOICE_PREFERENCES, type VoicePreferences } from "@shared/types";
 
-/** How long to wait for the user to start speaking before giving up. */
-const NO_SPEECH_TIMEOUT_MS = 6000;
+// No-speech giveup is configurable (VoicePreferences.noSpeechTimeoutMs,
+// Settings → Conversation) — see recordUntilSilence.
 const MAX_RECORDING_MS = 30_000;
 
 /** Map listening sensitivity (0 strict … 1 sensitive) to a speech level threshold. */
@@ -24,7 +24,7 @@ function speechThreshold(sensitivity: number): number {
 
 async function recordUntilSilence(
   stream: MediaStream,
-  options: { silenceMs: number; threshold: number },
+  options: { silenceMs: number; threshold: number; noSpeechTimeoutMs: number },
   onLevel: (level: number) => void,
 ): Promise<Blob> {
   const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -69,7 +69,7 @@ async function recordUntilSilence(
 
     const noSpeechTimer = setTimeout(() => {
       if (!speechSeen) finish();
-    }, NO_SPEECH_TIMEOUT_MS);
+    }, options.noSpeechTimeoutMs);
     const maxTimer = setTimeout(finish, MAX_RECORDING_MS);
 
     analyser.start(stream, (level) => {
@@ -232,6 +232,7 @@ export function useVoice(): {
           {
             silenceMs: prefs.current.silenceMs,
             threshold: speechThreshold(prefs.current.listeningSensitivity),
+            noSpeechTimeoutMs: prefs.current.noSpeechTimeoutMs,
           },
           (l) => setLevel(l),
         );

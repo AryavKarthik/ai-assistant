@@ -184,6 +184,10 @@ export interface VoicePreferences {
   interactionMode: VoiceInteractionMode;
   autoSendOnEndOfTurn: boolean;
   silenceMs: number;
+  /** How long to wait for the user to start speaking before giving up on the
+   *  turn entirely (no STT call, no chat call) — the fix for Nova otherwise
+   *  sitting there listening to silence/background noise indefinitely. */
+  noSpeechTimeoutMs: number;
   spokenReplies: boolean;
   bargeInEnabled: boolean;
   bargeInSilenceMs: number;
@@ -264,6 +268,7 @@ export const DEFAULT_VOICE_PREFERENCES: VoicePreferences = {
   interactionMode: "wake_word",
   autoSendOnEndOfTurn: true,
   silenceMs: 900,
+  noSpeechTimeoutMs: 5000,
   spokenReplies: true,
   bargeInEnabled: true,
   bargeInSilenceMs: 1400,

@@ -363,6 +363,14 @@ export function SettingsPage() {
                     min={0} max={1} step={0.05}
                     onChange={(v) => saveDebounced({ listeningSensitivity: v })}
                   />
+                  <SliderRow
+                    label="Give up after"
+                    description="How long Nova listens for you to start speaking before turning itself off."
+                    value={voice.noSpeechTimeoutMs}
+                    min={2000} max={10000} step={500}
+                    format={(v) => `${(v / 1000).toFixed(1)}s`}
+                    onChange={(v) => saveDebounced({ noSpeechTimeoutMs: v })}
+                  />
                 </Group>
                 <GroupLabel>Interrupting Nova</GroupLabel>
                 <Group>

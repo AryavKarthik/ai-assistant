@@ -1,8 +1,6 @@
 import type { OpenAiSttModel, SttProvider, TranscribeRequest } from "@shared/types";
 
 const DEFAULT_TRANSCRIBE_MODEL: OpenAiSttModel = "gpt-4o-transcribe";
-const TRANSCRIBE_PROMPT =
-  "Casual spoken commands and questions to a personal AI assistant.";
 
 export async function transcribeWithOpenAi(
   audio: Buffer,
@@ -21,7 +19,13 @@ export async function transcribeWithOpenAi(
   form.append("model", selectedModel);
   form.append("response_format", "json");
   form.append("language", "en");
-  if (selectedModel !== "whisper-1") form.append("prompt", TRANSCRIBE_PROMPT);
+  // Deliberately no "prompt" hint here: a prior "casual spoken commands and
+  // questions to a personal AI assistant" prompt biased the model's
+  // hallucinations on silence/background noise toward exactly that genre —
+  // generic assistant commands like "what's the weather" or "play music on
+  // Spotify" got fabricated out of near-silent audio and fed straight into
+  // chat, which combined with conversation-mode auto-re-listening (see
+  // useVoice.ts) produced a self-talking loop with no real user input.
 
   const response = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
