@@ -413,6 +413,18 @@ export function useVoice(): {
         return;
       }
 
+      // The STT pre-roll can catch the tail of the wake phrase — drop a
+      // leading "(hey) Jarvis" so it never reaches Claude as part of the ask.
+      transcript = transcript
+        .replace(/^\s*(?:hey|hi|ok|okay)?[,\s]*jarvis\b[,.!?\s]*/i, "")
+        .trim();
+      if (!transcript) {
+        // Wake word alone — nothing to do, just listen ending.
+        dispatch({ type: "dismiss" });
+        endTurn();
+        return;
+      }
+
       // Filter STT hallucinations from background noise/silence ("thanks for
       // watching", stray "you", etc.) and handle kill phrases ("stop", "that's
       // all", "thank you very much", ...) before ever calling Claude.

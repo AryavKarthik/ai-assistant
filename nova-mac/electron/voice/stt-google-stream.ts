@@ -60,10 +60,13 @@ export function startSttStream(): boolean {
         audioChannelCount: 1,
         languageCode: "en-AU",
         enableAutomaticPunctuation: true,
-        // latest_short finalizes segments aggressively — exactly what a
-        // low-latency command/chat turn wants; long utterances just produce
-        // several finals which we join.
-        model: "latest_short",
+        // latest_long, NOT latest_short: latest_short is built to stop after
+        // the FIRST detected utterance end — pause mid-sentence and it
+        // finalizes and ignores everything you say afterwards, which
+        // manifested as "it cuts me off and doesn't transcribe the rest".
+        // latest_long transcribes continuously; our own VAD decides when the
+        // turn actually ends.
+        model: "latest_long",
       },
       interimResults: true,
     })
@@ -110,7 +113,10 @@ export function pushSttAudio(buf: ArrayBuffer): void {
   const s = session;
   if (!s || s.ended || s.error) return;
   try {
-    s.stream.write(Buffer.from(buf));
+    // Copy, don't view: Buffer.from(ArrayBuffer) SHARES memory, and the same
+    // frame is also postMessage-transferred to the wake worker, which detaches
+    // the ArrayBuffer — a shared view would go empty before gRPC serializes it.
+    s.stream.write(Buffer.from(new Uint8Array(buf)));
   } catch (err) {
     s.error = err instanceof Error ? err : new Error(String(err));
   }
