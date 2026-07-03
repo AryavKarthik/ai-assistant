@@ -10,7 +10,6 @@ import { insertWorkout, listWorkouts, searchWorkouts } from "./workouts";
 import { saveMemory } from "../memory/save";
 import { searchMemories } from "../memory/search";
 import { resolveReminderDueAt } from "./parse-due-at";
-import { googleWebSearch } from "./web-search";
 import { fetchWebpage } from "./webpage";
 import type { MemoryCategory } from "../memory/types";
 import {
@@ -29,7 +28,24 @@ import {
   openApp,
   quitApp,
   openUrl,
+  runAppleScript,
+  runShellCommand,
+  spotlightSearch,
+  openPath,
+  openSettingsPane,
+  getClipboard,
+  setClipboard,
+  takeScreenshot,
+  mediaControl,
 } from "./mac-control";
+import {
+  listBrowserTabs,
+  openBrowserTab,
+  activateBrowserTab,
+  closeBrowserTab,
+  getActiveTabContent,
+  executeBrowserJs,
+} from "./browser-control";
 import { getTimerManager } from "../timers";
 
 export interface ToolContext {
@@ -90,10 +106,38 @@ export async function executeTool(
           return handleSearchYoutube(input, context);
         case "recommend_youtube":
           return handleRecommendYoutube(input, context);
-        case "web_search":
-          return handleWebSearch(input);
         case "fetch_webpage":
           return handleFetchWebpage(input);
+        case "list_browser_tabs":
+          return listBrowserTabs() as Promise<Record<string, unknown>>;
+        case "open_browser_tab":
+          return handleOpenBrowserTab(input);
+        case "activate_browser_tab":
+          return handleActivateBrowserTab(input);
+        case "close_browser_tab":
+          return handleCloseBrowserTab(input);
+        case "read_browser_page":
+          return getActiveTabContent() as Promise<Record<string, unknown>>;
+        case "run_browser_js":
+          return handleRunBrowserJs(input);
+        case "run_applescript":
+          return handleRunAppleScript(input);
+        case "run_shell_command":
+          return handleRunShellCommand(input);
+        case "search_files":
+          return handleSearchFiles(input);
+        case "open_path":
+          return handleOpenPath(input);
+        case "open_settings":
+          return handleOpenSettings(input);
+        case "get_clipboard":
+          return getClipboard() as Promise<Record<string, unknown>>;
+        case "set_clipboard":
+          return handleSetClipboard(input);
+        case "take_screenshot":
+          return handleTakeScreenshot(input);
+        case "media_control":
+          return handleMediaControl(input);
         case "set_timer":
           return handleSetTimer(input);
         case "list_timers":
@@ -349,18 +393,6 @@ async function handleDeleteReminder(
 
   await deleteReminder(context.userId, id);
   return { success: true, id };
-}
-
-async function handleWebSearch(
-  input: unknown,
-): Promise<Record<string, unknown>> {
-  const inp = input as { query: string; count?: number };
-  if (!inp.query?.trim()) {
-    return { error: "query is required" };
-  }
-  const { results, error } = await googleWebSearch(inp.query.trim(), inp.count ?? 5);
-  if (error) return { error };
-  return { results, count: results.length };
 }
 
 async function handleFetchWebpage(
@@ -635,6 +667,99 @@ async function handleSetScreenBrightness(input: unknown): Promise<Record<string,
     return { success: true, direction, ...result };
   }
   return { error: "level or direction is required" };
+}
+
+// ─── Browser control ────────────────────────────────────────────────────────────
+
+async function handleOpenBrowserTab(input: unknown): Promise<Record<string, unknown>> {
+  const { url } = input as { url?: string };
+  if (!url?.trim()) return { error: "url is required" };
+  const result = await openBrowserTab(url.trim());
+  return { success: true, ...result };
+}
+
+async function handleActivateBrowserTab(input: unknown): Promise<Record<string, unknown>> {
+  const { tab_index, window_index } = input as { tab_index?: number; window_index?: number };
+  if (!tab_index) return { error: "tab_index is required" };
+  const result = await activateBrowserTab({ tabIndex: tab_index, windowIndex: window_index });
+  return { success: true, ...result };
+}
+
+async function handleCloseBrowserTab(input: unknown): Promise<Record<string, unknown>> {
+  const { tab_index, window_index } = input as { tab_index?: number; window_index?: number };
+  if (!tab_index) return { error: "tab_index is required" };
+  const result = await closeBrowserTab({ tabIndex: tab_index, windowIndex: window_index });
+  return { success: true, ...result };
+}
+
+async function handleRunBrowserJs(input: unknown): Promise<Record<string, unknown>> {
+  const { code } = input as { code?: string };
+  if (!code?.trim()) return { error: "code is required" };
+  const result = await executeBrowserJs(code);
+  return { success: true, ...result };
+}
+
+// ─── Mac automation ──────────────────────────────────────────────────────────────
+
+async function handleRunAppleScript(input: unknown): Promise<Record<string, unknown>> {
+  const { script } = input as { script?: string };
+  if (!script?.trim()) return { error: "script is required" };
+  const result = await runAppleScript(script);
+  return { success: true, ...result };
+}
+
+async function handleRunShellCommand(input: unknown): Promise<Record<string, unknown>> {
+  const { command } = input as { command?: string };
+  if (!command?.trim()) return { error: "command is required" };
+  const result = await runShellCommand(command);
+  return { success: result.exitCode === 0, ...result };
+}
+
+async function handleSearchFiles(input: unknown): Promise<Record<string, unknown>> {
+  const { query, kind, limit } = input as {
+    query?: string;
+    kind?: string;
+    limit?: number;
+  };
+  if (!query?.trim()) return { error: "query is required" };
+  const result = await spotlightSearch({ query: query.trim(), kind, limit });
+  return result as unknown as Record<string, unknown>;
+}
+
+async function handleOpenPath(input: unknown): Promise<Record<string, unknown>> {
+  const { path } = input as { path?: string };
+  if (!path?.trim()) return { error: "path is required" };
+  await openPath(path.trim());
+  return { success: true, opened: path.trim() };
+}
+
+async function handleOpenSettings(input: unknown): Promise<Record<string, unknown>> {
+  const { pane } = input as { pane?: string };
+  if (!pane?.trim()) return { error: "pane is required" };
+  const result = await openSettingsPane(pane.trim());
+  return { success: true, ...result };
+}
+
+async function handleSetClipboard(input: unknown): Promise<Record<string, unknown>> {
+  const { text } = input as { text?: string };
+  if (text === undefined) return { error: "text is required" };
+  await setClipboard(text);
+  return { success: true };
+}
+
+async function handleTakeScreenshot(input: unknown): Promise<Record<string, unknown>> {
+  const { interactive } = input as { interactive?: boolean };
+  const result = await takeScreenshot({ interactive });
+  return { success: true, ...result };
+}
+
+async function handleMediaControl(input: unknown): Promise<Record<string, unknown>> {
+  const { action } = input as { action?: "playpause" | "next" | "previous" };
+  if (action !== "playpause" && action !== "next" && action !== "previous") {
+    return { error: "action must be playpause, next, or previous" };
+  }
+  const result = await mediaControl(action);
+  return { success: true, ...result };
 }
 
 async function handleRecommendYoutube(

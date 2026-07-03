@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { MessageParam } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageParam, ToolUnion } from "@anthropic-ai/sdk/resources/messages";
 import { IpcChannel, type ChatSendRequest } from "@shared/types";
 import {
   getUserId,
@@ -57,6 +57,21 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   recommend_youtube: "Finding videos…",
   web_search: "Searching the web…",
   fetch_webpage: "Reading page…",
+  list_browser_tabs: "Checking your tabs…",
+  open_browser_tab: "Opening a tab…",
+  activate_browser_tab: "Switching tabs…",
+  close_browser_tab: "Closing tab…",
+  read_browser_page: "Reading the page…",
+  run_browser_js: "Working in the browser…",
+  run_applescript: "Running that on your Mac…",
+  run_shell_command: "Running a command…",
+  search_files: "Searching your files…",
+  open_path: "Opening that…",
+  open_settings: "Opening settings…",
+  get_clipboard: "Reading clipboard…",
+  set_clipboard: "Copying that…",
+  take_screenshot: "Taking a screenshot…",
+  media_control: "Controlling playback…",
   set_timer: "Setting timer…",
   list_timers: "Checking timers…",
   cancel_timer: "Cancelling timer…",
@@ -71,6 +86,16 @@ const TOOL_STEP_LABELS: Record<string, string> = {
 function toolStepLabel(name: string): string {
   return TOOL_STEP_LABELS[name] ?? "Working on it…";
 }
+
+// Anthropic's server-side web search — executed on Anthropic's infra, no extra
+// API key. Combined with our custom tools so Claude can search + act in one turn.
+const WEB_SEARCH_TOOL: ToolUnion = {
+  type: "web_search_20250305",
+  name: "web_search",
+  max_uses: 5,
+};
+
+const ALL_TOOLS: ToolUnion[] = [...TOOL_DEFINITIONS, WEB_SEARCH_TOOL];
 
 let anthropic: Anthropic | null = null;
 function client(): Anthropic {
@@ -177,7 +202,7 @@ export async function streamTurn(
           max_tokens: maxTokens,
           system,
           messages,
-          tools: TOOL_DEFINITIONS,
+          tools: ALL_TOOLS,
         },
         { signal: controller.signal },
       );
