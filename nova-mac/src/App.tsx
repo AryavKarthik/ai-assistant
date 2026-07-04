@@ -66,6 +66,8 @@ export function App() {
   const [auth, setAuth] = useState<AuthState>({ signedIn: false, email: null });
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<string>("");
+  const [pasteUrl, setPasteUrl] = useState("");
+  const [showPaste, setShowPaste] = useState(false);
 
   useEffect(() => {
     nova().authStatus().then(setAuth).catch((e) => setStatus(`auth check failed: ${e?.message ?? e}`));
@@ -84,7 +86,17 @@ export function App() {
       setStatus("Sending magic link…");
       nova()
         .authSignIn(email)
-        .then(() => setStatus(`Magic link sent to ${email}. Check your email, then return here.`))
+        .then(() => setStatus(`Magic link sent to ${email}. Click it — or if nothing opens, paste the link below.`))
+        .catch((e) => setStatus(`Sign-in failed: ${e?.message ?? e}`));
+    };
+    const submitPaste = () => {
+      setStatus("Signing in…");
+      nova()
+        .authPasteCallback(pasteUrl)
+        .then((r) => {
+          if (!r.ok) setStatus(r.error ?? "Sign-in failed.");
+          // On success, onAuthChanged flips the view — no message needed.
+        })
         .catch((e) => setStatus(`Sign-in failed: ${e?.message ?? e}`));
     };
     return (
@@ -105,6 +117,37 @@ export function App() {
             Send magic link
           </button>
           {status && <div style={{ fontSize: 12, opacity: 0.8 }}>{status}</div>}
+
+          <button
+            onClick={() => setShowPaste((v) => !v)}
+            style={{ background: "none", border: "none", color: "rgba(255,255,255,0.55)", fontSize: 12, cursor: "pointer", padding: 0, textAlign: "left", textDecoration: "underline" }}
+          >
+            {showPaste ? "Hide manual sign-in" : "Link didn't open? Sign in manually"}
+          </button>
+
+          {showPaste && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ fontSize: 11.5, opacity: 0.7, lineHeight: 1.4 }}>
+                Click the magic link in your email. If your browser shows an error or a
+                page that won't open the app, copy its full address (starts with
+                <code> nova://auth-callback</code>) and paste it here.
+              </div>
+              <textarea
+                value={pasteUrl}
+                onChange={(e) => setPasteUrl(e.target.value)}
+                placeholder="nova://auth-callback#access_token=…"
+                rows={3}
+                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(0,0,0,0.25)", color: "white", fontSize: 12, fontFamily: "monospace", outline: "none", resize: "vertical" }}
+              />
+              <button
+                onClick={submitPaste}
+                disabled={!pasteUrl.trim()}
+                style={{ padding: "9px 12px", borderRadius: 10, border: "none", cursor: pasteUrl.trim() ? "pointer" : "default", background: pasteUrl.trim() ? "rgba(10,132,255,0.95)" : "rgba(255,255,255,0.15)", color: "white", fontSize: 13, fontWeight: 600 }}
+              >
+                Complete sign-in
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );

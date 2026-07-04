@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("nova", {
   authStatus: () => ipcRenderer.invoke(IpcChannel.AuthStatus),
   authSignIn: (email: string) => ipcRenderer.invoke(IpcChannel.AuthSignIn, email),
   authSignOut: () => ipcRenderer.invoke(IpcChannel.AuthSignOut),
+  authPasteCallback: (url: string) => ipcRenderer.invoke(IpcChannel.AuthPasteCallback, url),
   onAuthChanged: (cb: (s: unknown) => void): (() => void) => {
     const handler = (_e: Electron.IpcRendererEvent, s: unknown) => cb(s as AuthState);
     ipcRenderer.on(IpcChannel.AuthChanged, handler);

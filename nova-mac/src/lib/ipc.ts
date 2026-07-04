@@ -5,6 +5,7 @@ export interface NovaBridge {
   authStatus(): Promise<AuthState>;
   authSignIn(email: string): Promise<void>;
   authSignOut(): Promise<void>;
+  authPasteCallback(url: string): Promise<{ ok: boolean; error?: string }>;
   onAuthChanged(cb: (s: AuthState) => void): () => void;
   syncConversations(): Promise<import("@shared/types").ConversationSummary[]>;
   syncMemories(): Promise<import("@shared/types").MemorySummary[]>;

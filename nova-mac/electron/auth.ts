@@ -50,6 +50,44 @@ export async function handleAuthCallback(url: string): Promise<void> {
   console.warn("[nova] auth callback: no tokens or code found in url");
 }
 
+/**
+ * Manual login fallback for dev: the user pastes whatever the browser showed
+ * after clicking the magic link — the full `nova://auth-callback#...` URL, or
+ * just the `#access_token=...&refresh_token=...` fragment, or the bare
+ * `?code=...`. We normalize it and run it through the same callback handler.
+ * Returns a friendly error string instead of throwing so the UI can show it.
+ */
+export async function pasteAuthCallback(input: string): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = input.trim();
+  if (!trimmed) return { ok: false, error: "Paste the link first." };
+
+  // Accept a raw fragment/query the user copied without the scheme.
+  let url = trimmed;
+  if (!/^nova:\/\//i.test(url)) {
+    if (url.startsWith("#") || url.startsWith("?")) {
+      url = `nova://auth-callback${url}`;
+    } else if (/access_token=|refresh_token=|[?&]code=/.test(url)) {
+      url = `nova://auth-callback#${url.replace(/^[#?]/, "")}`;
+    } else {
+      return {
+        ok: false,
+        error: "That doesn't look like a login link. Copy the whole nova://auth-callback… URL from your browser.",
+      };
+    }
+  }
+
+  try {
+    await handleAuthCallback(url);
+    const state = await getAuthState();
+    if (!state.signedIn) {
+      return { ok: false, error: "Link didn't contain a valid session. It may have expired — request a new magic link." };
+    }
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Sign-in failed." };
+  }
+}
+
 export async function restoreSession(): Promise<void> {
   const stored = loadSession();
   if (!stored) return;
