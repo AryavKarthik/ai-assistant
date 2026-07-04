@@ -181,9 +181,10 @@ export async function streamTurn(
     // Voice used to be pinned to the light model; letting genuinely complex
     // spoken asks route to the heavy model makes voice answers as smart as
     // typed ones — the streaming STT path buys back the extra first-token time.
-    // Screen/vision questions always go heavy: the screenshot needs the
-    // stronger model to read and reason about it well.
-    const complexity = SCREEN_HINT.test(transcript) ? "heavy" : inferComplexity(transcript);
+    // Screen/vision questions are pinned to the LIGHT model (Haiku) by user
+    // preference — Haiku 4.5 has vision, and it's faster + far cheaper for
+    // reading what's on screen.
+    const complexity = SCREEN_HINT.test(transcript) ? "light" : inferComplexity(transcript);
     const model = complexity === "heavy" ? HEAVY_MODEL : LIGHT_MODEL;
     const maxIterations = isVoice
       ? MAX_TOOL_ITERATIONS_VOICE
