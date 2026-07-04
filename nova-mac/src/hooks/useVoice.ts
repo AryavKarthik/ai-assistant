@@ -533,6 +533,9 @@ export function useVoice(): {
       const currentSpeaker = prefs.current.spokenReplies
         ? player.current.playStreaming(ttsOptions())
         : null;
+      // Accumulated so a false barge-in (see onBarge) can re-speak the reply
+      // instead of just dropping it.
+      let replyText = "";
       // Once a barge-in commits to a new turn (or a stop phrase), the original
       // turn's completion path must not also end/re-listen.
       let bargeCommitted = false;
@@ -556,11 +559,14 @@ export function useVoice(): {
         void runTurn({ followup: true });
       }
 
-      // Interrupt handling. Deterministic and never stuck: an interrupt stops
-      // the reply and listens briefly; a real follow-up starts a new turn,
-      // anything else (silence, noise, a kill word) ends the turn cleanly back
-      // to idle. (A previous version tried to "resume" the paused reply, but
-      // the orb reducer can't go bargeIn→responding, so it froze orange.)
+      // Interrupt handling. An interrupt stops the reply and listens briefly:
+      // real follow-up speech starts a new turn; a kill word ends the turn;
+      // otherwise (silence, or just noise — no actual follow-up) it RESUMES
+      // speaking the reply it was giving. The resume dispatches submit→
+      // responseStart, the same valid bargeIn→processing→responding path a
+      // fresh reply already uses — dispatching responseStart directly from
+      // bargeIn (skipping submit) is a no-op in the reducer and is what froze
+      // the orb orange in an earlier version of this.
       async function onBarge() {
         if (bargeCommitted) return;
         bargeCommitted = true;
@@ -615,13 +621,40 @@ export function useVoice(): {
           startReply(s, stream);
           return;
         }
-        // Silence, noise, or a kill word → conversation's over. Go idle.
         if (s && isVoiceStopPhrase(s)) {
+          // Kill word during a barge — conversation's over. Go idle.
           cue("gotIt");
           nova().orbDisarmAutoHide();
+          dispatch({ type: "dismiss" });
+          endTurn();
+          return;
         }
-        dispatch({ type: "dismiss" });
-        endTurn();
+
+        // False alarm — no real follow-up (silence or just noise). Resume
+        // speaking the reply instead of dropping it.
+        const toSay = replyText.trim();
+        if (!toSay || !prefs.current.spokenReplies) {
+          dispatch({ type: "dismiss" });
+          endTurn();
+          return;
+        }
+        // bargeIn → processing → responding, via the same transitions a fresh
+        // reply uses (see the note above onBarge).
+        dispatch({ type: "submit", transcript });
+        dispatch({ type: "responseStart" });
+        dispatch({ type: "responseDelta", delta: toSay });
+        const resumeSpeaker = player.current.playStreaming(ttsOptions());
+        resumeSpeaker.feed(toSay);
+        try {
+          await resumeSpeaker.finish();
+        } catch {
+          // best effort — still settle below either way
+        }
+        if (cancelled) {
+          dispatch({ type: "dismiss" });
+          return;
+        }
+        finishTurn();
       }
 
       let firstDelta = true;
@@ -632,6 +665,7 @@ export function useVoice(): {
           cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
           dispatch({ type: "responseStart" }); // purple → green only now
         }
+        replyText += p.delta;
         dispatch({ type: "responseDelta", delta: p.delta });
         currentSpeaker?.feed(p.delta);
       });
