@@ -10,7 +10,6 @@ import { insertWorkout, listWorkouts, searchWorkouts } from "./workouts";
 import { saveMemory } from "../memory/save";
 import { searchMemories } from "../memory/search";
 import { resolveReminderDueAt } from "./parse-due-at";
-import { googleWebSearch } from "./web-search";
 import { fetchWebpage } from "./webpage";
 import type { MemoryCategory } from "../memory/types";
 import {
@@ -96,8 +95,6 @@ export async function executeTool(
           return handleSearchYoutube(input, context);
         case "recommend_youtube":
           return handleRecommendYoutube(input, context);
-        case "web_search":
-          return handleWebSearch(input);
         case "fetch_webpage":
           return handleFetchWebpage(input);
         case "set_timer":
@@ -367,18 +364,6 @@ async function handleDeleteReminder(
 
   await deleteReminder(context.userId, id);
   return { success: true, id };
-}
-
-async function handleWebSearch(
-  input: unknown,
-): Promise<Record<string, unknown>> {
-  const inp = input as { query: string; count?: number };
-  if (!inp.query?.trim()) {
-    return { error: "query is required" };
-  }
-  const { results, error } = await googleWebSearch(inp.query.trim(), inp.count ?? 5);
-  if (error) return { error };
-  return { results, count: results.length };
 }
 
 async function handleFetchWebpage(

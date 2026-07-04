@@ -329,25 +329,9 @@ export const TOOL_DEFINITIONS: Tool[] = [
       required: ["topic"],
     },
   },
-  {
-    name: "web_search",
-    description:
-      "Search the web for current information, facts, news, or any topic the user asks about. Use when the answer requires real-time or external information not in memory. Returns titles, URLs, and descriptions. If the user asks to open a specific result, call fetch_webpage or open_browser_tab next.",
-    input_schema: {
-      type: "object",
-      properties: {
-        query: {
-          type: "string",
-          description: "Search query — be specific and include relevant context",
-        },
-        count: {
-          type: "integer",
-          description: "Number of results to return (1–10, default 5)",
-        },
-      },
-      required: ["query"],
-    },
-  },
+  // NOTE: web search is provided by Anthropic's native server-side web_search
+  // tool (added in electron/chat-turn.ts), not a client-side tool here — it
+  // runs on Anthropic's infrastructure and needs no separate search API key.
   {
     name: "set_timer",
     description:

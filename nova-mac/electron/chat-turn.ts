@@ -78,6 +78,17 @@ function toolStepLabel(name: string): string {
   return TOOL_STEP_LABELS[name] ?? "Working on it…";
 }
 
+// Anthropic's native server-side web search: Claude runs the search on
+// Anthropic's infrastructure and the results come back in the same response —
+// no separate search API key, just ANTHROPIC_API_KEY. The basic
+// web_search_20250305 variant works across our models (Haiku 4.5 + Sonnet
+// 4.6); the dynamic-filtering _20260209 variant is Sonnet/Opus-4.6+ only.
+const WEB_SEARCH_TOOL = {
+  type: "web_search_20250305",
+  name: "web_search",
+  max_uses: 5,
+} as const;
+
 let anthropic: Anthropic | null = null;
 function client(): Anthropic {
   if (!anthropic) {
@@ -204,6 +215,14 @@ export async function streamTurn(
 
     let fullText = "";
     let iterations = 0;
+    let pauseContinuations = 0;
+
+    // getToolDefinitions() are our client-side tools; the web search tool runs
+    // server-side (Anthropic executes it), so it's appended here rather than
+    // dispatched through executeTool.
+    const tools = [...getToolDefinitions(), WEB_SEARCH_TOOL] as Parameters<
+      ReturnType<typeof client>["messages"]["stream"]
+    >[0]["tools"];
 
     while (true) {
       const stream = client().messages.stream(
@@ -212,7 +231,7 @@ export async function streamTurn(
           max_tokens: maxTokens,
           system,
           messages,
-          tools: getToolDefinitions(),
+          tools,
         },
         { signal: controller.signal },
       );
@@ -223,6 +242,20 @@ export async function streamTurn(
       });
 
       const response = await stream.finalMessage();
+
+      // Server-side web search hit its internal loop limit — re-send so
+      // Anthropic resumes the search where it left off (bounded so a runaway
+      // can't loop forever).
+      if (response.stop_reason === "pause_turn" && pauseContinuations < 3) {
+        pauseContinuations++;
+        emit(IpcChannel.ChatToolUse, {
+          requestId: req.requestId,
+          toolName: "web_search",
+          step: toolStepLabel("web_search"),
+        });
+        messages.push({ role: "assistant", content: response.content });
+        continue;
+      }
 
       if (response.stop_reason !== "tool_use" || iterations >= maxIterations) {
         break;
