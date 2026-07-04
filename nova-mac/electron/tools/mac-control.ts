@@ -375,56 +375,52 @@ mediaKey(${keyCode});
   return { action };
 }
 
+/** Scrapes YouTube's public search results page for the first video id — no
+ *  API key. Returns null if nothing parseable comes back. */
+async function firstYouTubeVideoId(query: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+      {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: AbortSignal.timeout(8000),
+      },
+    );
+    const html = await res.text();
+    const m = html.match(/"videoId":"([0-9A-Za-z_-]{11})"/);
+    return m?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * Plays a search on YouTube Music: opens (or focuses) music.youtube.com to the
- * query in the user's browser and best-effort auto-plays the top result by
- * driving the page — falls back to leaving the results on screen when the
- * browser blocks scripting. Uses the user's signed-in YT Music account, so it
- * respects their library and recommendations.
+ * Plays a query on YouTube Music. Rather than driving the fragile web UI, it
+ * resolves the top matching track's video id from YouTube search and opens the
+ * YouTube Music WATCH url for it, which the player autoplays — in the user's
+ * default browser, on their signed-in account. Falls back to opening the
+ * search page if no id could be resolved. No Accessibility needed (just opens
+ * a URL); transport control afterwards is control_media.
  */
 export async function playOnYouTubeMusic(query: string): Promise<{ played: boolean; note: string }> {
   const q = query.trim();
   if (!q) throw new Error("query is required");
-  const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(q)}`;
 
   const { shell } = await import("electron");
-  await shell.openExternal(searchUrl);
+  const videoId = await firstYouTubeVideoId(q);
 
-  // Give the page a moment, then try to click the first result via whichever
-  // Chromium/Safari browser is frontmost. This needs the browser's Automation
-  // permission; if it's blocked we still left the results open for the user.
-  const js =
-    "(function(){var el=document.querySelector('ytmusic-responsive-list-item-renderer');" +
-    "if(el){var p=el.querySelector('#play-button, button[aria-label*=\\\"Play\\\"], .play-button');" +
-    "if(p){p.click();return 'played';} el.click(); return 'clicked';} return 'no-results';})();";
-  const script = `
-delay 2.5
-set didPlay to false
-tell application "System Events"
-  set frontApp to name of first application process whose frontmost is true
-end tell
-try
-  if frontApp is "Google Chrome" or frontApp is "Brave Browser" or frontApp is "Microsoft Edge" or frontApp is "Arc" then
-    tell application frontApp to set r to (execute active tab of front window javascript ${JSON.stringify(js)})
-    if r is "played" or r is "clicked" then set didPlay to true
-  else if frontApp is "Safari" then
-    tell application "Safari" to set r to (do JavaScript ${JSON.stringify(js)} in front document)
-    if r is "played" or r is "clicked" then set didPlay to true
-  end if
-end try
-return didPlay
-`;
-  let played = false;
-  try {
-    const out = await run("/usr/bin/osascript", ["-e", script], 12_000);
-    played = out.trim() === "true";
-  } catch {
-    // Scripting blocked or browser not scriptable — results are still open.
+  if (videoId) {
+    await shell.openExternal(`https://music.youtube.com/watch?v=${videoId}`);
+    return { played: true, note: `Playing "${q}" on YouTube Music.` };
   }
+
+  await shell.openExternal(`https://music.youtube.com/search?q=${encodeURIComponent(q)}`);
   return {
-    played,
-    note: played
-      ? `Playing "${q}" on YouTube Music.`
-      : `Opened YouTube Music search for "${q}". If it didn't start, say "play" and I'll hit play, or click the song.`,
+    played: false,
+    note: `Couldn't resolve a track for "${q}", so I opened the YouTube Music search — pick one, then say "pause"/"skip" to control it.`,
   };
 }
