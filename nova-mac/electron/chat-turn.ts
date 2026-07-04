@@ -9,7 +9,9 @@ import {
   preRetrieveContext,
   resolveUserTimezoneCached,
   buildClockForZone,
-  buildMacSystemPrompt,
+  formatRuntimeClockForPrompt,
+  MAC_TEXT_SYSTEM_PROMPT,
+  MAC_VOICE_SYSTEM_PROMPT,
   inferComplexity,
   autoCaptureFromMessage,
   resolveAssistantText,
@@ -209,7 +211,17 @@ export async function streamTurn(
     ]);
 
     const clock = buildClockForZone(timezone);
-    const system = buildMacSystemPrompt(isVoice, clock);
+    // Prompt caching: the big static system prompt is one cached block; the
+    // per-turn clock is a separate UNcached block after it, so the cache
+    // prefix (tools + static system) stays byte-identical across turns and the
+    // tool loop's follow-up calls read it at ~10% price instead of full. This
+    // is the main lever on per-turn cost (a screen read makes two model calls,
+    // both otherwise re-sending the whole system + ~30 tool schemas).
+    const staticSystem = isVoice ? MAC_VOICE_SYSTEM_PROMPT : MAC_TEXT_SYSTEM_PROMPT;
+    const system = [
+      { type: "text" as const, text: staticSystem, cache_control: { type: "ephemeral" as const } },
+      { type: "text" as const, text: formatRuntimeClockForPrompt(clock) },
+    ];
     const messages = buildMessages(
       [
         ...history.filter((m) => m.id !== userMsg.id),

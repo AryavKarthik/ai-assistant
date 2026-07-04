@@ -10,6 +10,6 @@ export { resolveRetrievalPlan, applyMacVoiceOverrides } from "./retrieval-plan";
 export type { RetrievalPlan } from "./retrieval-plan";
 export { resolveUserTimezoneCached, buildClockForZone, formatRuntimeClockForPrompt } from "./runtime-context";
 export type { RuntimeClockContext } from "./runtime-context";
-export { buildMacSystemPrompt } from "./system-prompt";
+export { buildMacSystemPrompt, MAC_TEXT_SYSTEM_PROMPT, MAC_VOICE_SYSTEM_PROMPT } from "./system-prompt";
 export { getForcedMemoryTool } from "./memory-intent";
 export { resolveAssistantText, voiceSpokenFallback } from "./voice-fallback";
