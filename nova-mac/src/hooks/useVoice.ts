@@ -160,7 +160,6 @@ export function useVoice(): {
   const prefs = useRef<VoicePreferences>(DEFAULT_VOICE_PREFERENCES);
   const reqId = useRef(0);
   const cleanupTurn = useRef<(() => void) | null>(null);
-  const cancelledRef = useRef(false);
   /** True while any turn (voice or text) is streaming. */
   const busyRef = useRef(false);
   /** Consecutive noise/empty listens in conversation mode — quietly re-listen
@@ -175,7 +174,20 @@ export function useVoice(): {
   const sendTextRef = useRef<(text: string) => void>(() => {});
 
   useEffect(() => {
-    cancelledRef.current = false;
+    // A local closure variable, NOT a ref: React 18 StrictMode (dev only)
+    // mounts this effect, runs its cleanup, then mounts it again to check for
+    // non-idempotent effects. A `useRef`-backed flag is shared across BOTH
+    // invocations — the second invocation's reset-to-false at the top of this
+    // same effect body un-cancels the FIRST (stale) invocation's still-pending
+    // async boot(), since `cancelledRef.current` bounces back to false before
+    // that stale chain's own `if (cancelledRef.current) return;` check runs.
+    // The stale boot() then finishes and calls startWakeCapture() a SECOND
+    // time on top of the real one — two concurrent wake-capture pipelines
+    // both feeding frames into the wake engine, which is exactly the kind of
+    // thing that shows up as "wake word inconsistent" in dev (`npm run dev`).
+    // A `let` here is scoped to THIS invocation of the effect, so each
+    // StrictMode cycle gets its own independent flag.
+    let cancelled = false;
     let stopWake: (() => void) | null = null;
 
     function cue(name: Parameters<typeof playCue>[0]) {
@@ -192,9 +204,9 @@ export function useVoice(): {
 
     async function boot() {
       prefs.current = await nova().getVoicePreferences();
-      if (cancelledRef.current) return;
+      if (cancelled) return;
       const stream = await mic.current.acquire();
-      if (cancelledRef.current) return;
+      if (cancelled) return;
       stopWake = startWakeCapture(
         stream,
         (buf) => nova().sendWakeFrame(buf),
@@ -230,7 +242,7 @@ export function useVoice(): {
     });
 
     const offWake = nova().onWakeDetected(() => {
-      if (!cancelledRef.current) {
+      if (!cancelled) {
         if (prefs.current.instantAckMode !== "off") cue("wake");
         void runTurn();
       }
@@ -330,7 +342,7 @@ export function useVoice(): {
         endTurn();
         return;
       }
-      if (cancelledRef.current) {
+      if (cancelled) {
         dispatch({ type: "dismiss" });
         return;
       }
@@ -348,7 +360,7 @@ export function useVoice(): {
         const ok = await nova()
           .sttStreamStart({ sampleRateHertz })
           .catch(() => false);
-        if (ok && !cancelledRef.current) {
+        if (ok && !cancelled) {
           // Pre-roll, then live: the ring holds only pre-start frames and this
           // flush is synchronous, so ordering to Google stays monotonic.
           for (const f of sttRing.current) nova().sttStreamAudio(f);
@@ -384,7 +396,7 @@ export function useVoice(): {
       mic.current.rememberNoiseFloor(recording.noiseFloor);
       const audio = recording.blob;
       setLevel(0);
-      if (cancelledRef.current) {
+      if (cancelled) {
         abortSttStream();
         dispatch({ type: "dismiss" });
         return;
@@ -446,7 +458,7 @@ export function useVoice(): {
         endTurn();
         return;
       }
-      if (cancelledRef.current) {
+      if (cancelled) {
         dispatch({ type: "dismiss" });
         return;
       }
@@ -575,7 +587,7 @@ export function useVoice(): {
           probe = null;
         }
         setLevel(0);
-        if (cancelledRef.current) {
+        if (cancelled) {
           dispatch({ type: "dismiss" });
           return;
         }
@@ -683,7 +695,7 @@ export function useVoice(): {
     }
 
     return () => {
-      cancelledRef.current = true;
+      cancelled = true;
       offWake();
       offPrefs?.();
       offTimer?.();
@@ -693,6 +705,13 @@ export function useVoice(): {
       cleanupTurn.current = null;
       player.current.stop();
       mic.current.release();
+      // Safety net: if a turn (or a multi-turn conversation, which no longer
+      // calls endTurn() between exchanges) was in flight when this unmounts,
+      // main's wake engine would otherwise stay paused forever with no other
+      // signal ever telling it to resume. Both calls are idempotent/no-ops
+      // when nothing was in progress.
+      abortSttStream();
+      nova().voiceTurnEnded();
     };
   }, []);
 

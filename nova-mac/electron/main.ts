@@ -254,6 +254,27 @@ app.whenReady().then(async () => {
   // Lazy-loaded streaming STT module — declared before the wake bridge so the
   // pushFrame closure never hits a temporal-dead-zone reference.
   let sttStream: typeof import("./voice/stt-google-stream") | null = null;
+  let sttStreamLoading: Promise<typeof import("./voice/stt-google-stream")> | null = null;
+  // Start/Stop/Abort must never silently no-op just because the dynamic
+  // import is still in flight: a Start immediately followed by an Abort (a
+  // false-alarm turn that bails right away) used to race — if `sttStream` was
+  // still null when Abort ran, `sttStream?.abortSttStream()` did nothing, so
+  // Start's `import()` resolved afterward and opened a session nobody ever
+  // told to close. That session leaked until the NEXT turn's Start overwrote
+  // it, and in between, `SttStreamStop` on a turn that raced the same way
+  // found `sttStream` still null and returned "" — silently downgrading that
+  // turn to slow batch STT despite streaming looking "on". All three handlers
+  // now chain off the same loading promise, so an Abort issued before the
+  // import resolves still runs (in the same order the IPC messages arrived)
+  // instead of being dropped.
+  function loadSttStream(): Promise<typeof import("./voice/stt-google-stream")> {
+    if (sttStream) return Promise.resolve(sttStream);
+    sttStreamLoading ??= import("./voice/stt-google-stream").then((m) => {
+      sttStream = m;
+      return m;
+    });
+    return sttStreamLoading;
+  }
 
   const wake = new WakeWordController(modelsDir);
   wake.start(() => {
@@ -277,19 +298,24 @@ app.whenReady().then(async () => {
     IpcChannel.SttStreamStart,
     async (_e, req: import("@shared/types").SttStreamStartRequest) => {
       if (!req?.sampleRateHertz) return false;
-      sttStream ??= await import("./voice/stt-google-stream");
-      return sttStream.startSttStream(req.sampleRateHertz);
+      const m = await loadSttStream();
+      return m.startSttStream(req.sampleRateHertz);
     },
   );
   ipcMain.on(IpcChannel.SttStreamAudio, (_e, buf: ArrayBuffer) => {
     if (sttStream && sttStream.sttStreamActive()) sttStream.pushSttAudio(buf);
   });
   ipcMain.handle(IpcChannel.SttStreamStop, async () => {
-    if (!sttStream) return "";
-    return sttStream.stopSttStream();
+    if (!sttStream && !sttStreamLoading) return "";
+    const m = await loadSttStream();
+    return m.stopSttStream();
   });
   ipcMain.on(IpcChannel.SttStreamAbort, () => {
-    sttStream?.abortSttStream();
+    if (sttStream) {
+      sttStream.abortSttStream();
+      return;
+    }
+    if (sttStreamLoading) void loadSttStream().then((m) => m.abortSttStream());
   });
   // Apply the user's saved wakeWordSensitivity on startup — previously this
   // preference was persisted but never actually read, so the fire threshold
