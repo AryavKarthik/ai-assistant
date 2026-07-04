@@ -496,6 +496,20 @@ export const TOOL_DEFINITIONS: Tool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "see_screen",
+    description:
+      "Capture and look at what's currently on the user's screen, then answer using what you see. Call this whenever the user refers to their screen or something in front of them — 'what does this say?', 'what's this error?', 'summarize this', 'what app is this?', 'is this safe to click?', 'read this to me', or any 'this/here/that' that only makes sense visually. After it returns the screenshot, describe or act on the actual content. Requires macOS Screen Recording permission (the result explains if it's missing).",
+    input_schema: {
+      type: "object",
+      properties: {
+        display: {
+          type: "integer",
+          description: "Which display to capture (1 = main, default). Only set for multi-monitor.",
+        },
+      },
+    },
+  },
+  {
     name: "control_media",
     description:
       "Play/pause or skip whatever audio is currently playing on the Mac — YouTube Music in a browser, Spotify, Apple Music, a video, etc. Use for 'pause', 'resume', 'play/pause', 'skip', 'next song', 'previous song', 'go back'. This is the reliable way to control playback that's already going. Needs Accessibility permission (the result says so if it's missing).",

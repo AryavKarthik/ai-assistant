@@ -38,6 +38,7 @@ import {
   playOnYouTubeMusic,
   type MediaAction,
 } from "./mac-control";
+import { captureScreen } from "./screen";
 import { getTimerManager } from "../timers";
 
 export interface ToolContext {
@@ -126,6 +127,8 @@ export async function executeTool(
           return listShortcuts() as Promise<Record<string, unknown>>;
         case "check_mac_permissions":
           return handleCheckMacPermissions(input);
+        case "see_screen":
+          return handleSeeScreen(input);
         case "control_media":
           return handleControlMedia(input);
         case "play_youtube_music":
@@ -675,6 +678,17 @@ async function handleCheckMacPermissions(input: unknown): Promise<Record<string,
             "System Settings → Privacy & Security → Accessibility (it appears as 'Electron' in dev)." +
             (open_settings ? " I opened that pane for you." : ""),
         }),
+  };
+}
+
+async function handleSeeScreen(input: unknown): Promise<Record<string, unknown>> {
+  const { display } = input as { display?: number };
+  const shot = await captureScreen(display && display > 0 ? Math.floor(display) : 1);
+  // Special shape: chat-turn.ts turns this into an actual image tool_result
+  // block so Claude sees the screenshot rather than a JSON blob.
+  return {
+    _screenshot: { mediaType: shot.mediaType, base64: shot.base64 },
+    note: "Screenshot captured — describe or act on what's shown.",
   };
 }
 

@@ -72,6 +72,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   check_mac_permissions: "Checking permissions…",
   control_media: "Controlling playback…",
   play_youtube_music: "Putting on music…",
+  see_screen: "Looking at your screen…",
   composio_search_tools: "Finding the right tool…",
   composio_execute: "Working in your apps…",
 };
@@ -100,6 +101,11 @@ function client(): Anthropic {
   }
   return anthropic;
 }
+
+// Phrases that imply the user is asking about what's on their screen — routed
+// to the vision-capable heavy model so it reads the screenshot well.
+const SCREEN_HINT =
+  /\b(screen|display|read (this|it|that|the)|what does (this|it|that) say|what('?s| is) (this|that|on (my|the) screen)|summari[sz]e (this|the page|what)|look at (this|my screen|the screen|that)|see (my|the) screen|what am i (looking at|seeing)|what app is (this|that)|is (this|that) safe|explain (this|what('?s| is) here))\b/i;
 
 const inFlight = new Map<string, AbortController>();
 
@@ -175,7 +181,9 @@ export async function streamTurn(
     // Voice used to be pinned to the light model; letting genuinely complex
     // spoken asks route to the heavy model makes voice answers as smart as
     // typed ones — the streaming STT path buys back the extra first-token time.
-    const complexity = inferComplexity(transcript);
+    // Screen/vision questions always go heavy: the screenshot needs the
+    // stronger model to read and reason about it well.
+    const complexity = SCREEN_HINT.test(transcript) ? "heavy" : inferComplexity(transcript);
     const model = complexity === "heavy" ? HEAVY_MODEL : LIGHT_MODEL;
     const maxIterations = isVoice
       ? MAX_TOOL_ITERATIONS_VOICE
@@ -278,17 +286,39 @@ export async function streamTurn(
       }
 
       const toolResults = await Promise.all(
-        toolUseBlocks.map(async (block) => ({
-          type: "tool_result" as const,
-          tool_use_id: block.id,
-          content: JSON.stringify(
-            await executeTool(
-              block.name,
-              block.input as Record<string, unknown>,
-              toolContext,
-            ),
-          ),
-        })),
+        toolUseBlocks.map(async (block) => {
+          const result = await executeTool(
+            block.name,
+            block.input as Record<string, unknown>,
+            toolContext,
+          );
+          // see_screen returns a screenshot; hand Claude a real image block so
+          // it can actually look, instead of a JSON string.
+          const shot = (result as { _screenshot?: { mediaType: string; base64: string } })
+            ._screenshot;
+          if (shot?.base64) {
+            return {
+              type: "tool_result" as const,
+              tool_use_id: block.id,
+              content: [
+                {
+                  type: "image" as const,
+                  source: {
+                    type: "base64" as const,
+                    media_type: shot.mediaType as "image/jpeg",
+                    data: shot.base64,
+                  },
+                },
+                { type: "text" as const, text: "Screenshot of the user's screen." },
+              ],
+            };
+          }
+          return {
+            type: "tool_result" as const,
+            tool_use_id: block.id,
+            content: JSON.stringify(result),
+          };
+        }),
       );
       messages.push({ role: "user", content: toolResults });
       iterations++;
