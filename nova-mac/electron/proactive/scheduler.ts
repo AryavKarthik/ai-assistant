@@ -81,11 +81,13 @@ export class ProactiveScheduler {
     const { alerts, proactive } = await this.loadPrefs();
     if (!alerts.speakTimerDone || !alerts.voiceAnnouncementsEnabled) return;
     if (this.isQuiet(proactive, alerts)) return;
+    const fallback = label ? `Timer's done — ${label}.` : "Your timer is up.";
+    const { generateSpokenAnnouncement } = await import("./announce-text");
     this.host.broadcast(IpcChannel.ProactiveSpeak, {
       id: `timer-${Date.now()}`,
       kind: "timer",
       noticeText: "",
-      speechText: label ? `Timer's done — ${label}.` : "Your timer is up.",
+      speechText: await generateSpokenAnnouncement("timer", fallback, fallback),
     } satisfies ProactiveSpeakEvent);
   }
 
@@ -133,8 +135,15 @@ export class ProactiveScheduler {
       }
 
       const quiet = this.isQuiet(proactive, alerts);
+      const willSpeak = alerts.voiceAnnouncementsEnabled && !quiet;
       for (const a of announcements) {
         markAnnounced(a.key);
+        // Rewrite the spoken line in Nova's actual voice (template = fallback)
+        // so announcements don't sound like a different, robotic assistant.
+        if (willSpeak && a.kind !== "loop") {
+          const { generateSpokenAnnouncement } = await import("./announce-text");
+          a.speechText = await generateSpokenAnnouncement(a.kind, a.speechText, a.speechText);
+        }
         this.deliver(a, quiet, alerts);
       }
 

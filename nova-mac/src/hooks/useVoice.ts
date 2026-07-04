@@ -105,11 +105,15 @@ async function recordUntilSilence(
 
     // If the user starts talking right at the no-speech deadline (the gate's
     // sustained-speech hold hasn't confirmed yet), extend instead of cutting
-    // them off.
+    // them off — but only a couple of times. Unbounded extensions meant any
+    // room with intermittent noise (each blip refreshing lastLoudAt) kept the
+    // listen open way past the configured give-up time.
     let lastLoudAt = 0;
+    let deadlineExtensions = 0;
     function onNoSpeechDeadline() {
       if (gate.confirmed) return;
-      if (Date.now() - lastLoudAt < 700) {
+      if (Date.now() - lastLoudAt < 700 && deadlineExtensions < 2) {
+        deadlineExtensions++;
         noSpeechTimer = setTimeout(onNoSpeechDeadline, 1500);
         return;
       }
@@ -277,6 +281,7 @@ export function useVoice(): {
       if (!next) return;
       announcing = true;
       busyRef.current = true;
+      let spoke = false;
       try {
         dispatch({ type: "announce", message: next.noticeText || null });
         if (next.speechText) {
@@ -284,6 +289,7 @@ export function useVoice(): {
           speaker.feed(next.speechText);
           try {
             await speaker.finish();
+            spoke = true;
           } catch {
             // synth/playback failure — the notice is still on screen
           }
@@ -291,15 +297,29 @@ export function useVoice(): {
       } finally {
         if (!cancelled) {
           dispatch({ type: "announceEnd" });
-          // Let the notice linger, then clear so the panel can tuck away.
-          if (next.noticeText) setTimeout(() => dispatch({ type: "dismiss" }), 6000);
-          else dispatch({ type: "dismiss" });
           announcing = false;
           busyRef.current = false;
-          // Re-arms wake scoring (no-op if it wasn't paused) and lets main
-          // auto-hide the popup it opened for this announcement.
-          nova().voiceTurnEnded();
-          void drainAnnouncements();
+          if (spoke && prefs.current.interactionMode !== "off") {
+            // Brief reply window: the user can answer the announcement
+            // ("snooze it", "what's it about?") without saying the wake word.
+            // The turn's own summon clears the lingering notice; if nothing is
+            // said it quietly ends (which also lets the popup auto-hide).
+            void runTurn({ followup: true, noSpeechMs: 3000 });
+          } else {
+            // Let the notice linger, then clear so the panel can tuck away —
+            // unless a turn started in the meantime (never reset one mid-flight).
+            if (next.noticeText) {
+              setTimeout(() => {
+                if (!busyRef.current) dispatch({ type: "dismiss" });
+              }, 6000);
+            } else {
+              dispatch({ type: "dismiss" });
+            }
+            // Re-arms wake scoring (no-op if it wasn't paused) and lets main
+            // auto-hide the popup it opened for this announcement.
+            nova().voiceTurnEnded();
+            void drainAnnouncements();
+          }
         }
       }
     }
@@ -382,7 +402,9 @@ export function useVoice(): {
     // `followup: true` means this is a continuation of an ongoing conversation
     // (re-listen right after a reply) rather than a fresh wake — it waits a bit
     // less for speech and ends quietly (back to sleep) if nothing comes.
-    async function runTurn(opts?: { followup?: boolean }) {
+    // `noSpeechMs` overrides the give-up window (used for the short reply
+    // window after a proactive announcement).
+    async function runTurn(opts?: { followup?: boolean; noSpeechMs?: number }) {
       busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
@@ -434,7 +456,8 @@ export function useVoice(): {
             // Shorter give-up window mid-conversation so it drops back to sleep
             // promptly when you're actually done, without cutting off a first
             // wake utterance.
-            noSpeechTimeoutMs: opts?.followup ? 4000 : prefs.current.noSpeechTimeoutMs,
+            noSpeechTimeoutMs:
+              opts?.noSpeechMs ?? (opts?.followup ? 4000 : prefs.current.noSpeechTimeoutMs),
             // Warm calibration: reuse the noise floor measured last turn so
             // the gate doesn't spend its calibration window re-learning the
             // same room (and can't be fooled by calibrating mid-sentence).
@@ -800,6 +823,8 @@ export function useVoice(): {
       busyRef.current = false;
       abortSttStream(); // idempotent — never leak a recognizer
       nova().voiceTurnEnded();
+      // Announcements that queued up while this turn ran can go out now.
+      void drainAnnouncements();
     }
 
     return () => {
