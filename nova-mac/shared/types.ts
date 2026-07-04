@@ -7,6 +7,9 @@ export enum IpcChannel {
   // Manual login fallback: paste the nova://auth-callback URL from the browser
   // when the OS deep-link handoff doesn't route (common in dev).
   AuthPasteCallback = "auth:pasteCallback",
+  // Email + password sign-in (the normal, deep-link-free path).
+  AuthSignInPassword = "auth:signInPassword",
+  AuthSetPassword = "auth:setPassword",
   SyncConversations = "sync:conversations",
   SyncMemories = "sync:memories",
   // Wake word

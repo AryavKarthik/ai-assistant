@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { getSupabase } from "./supabase";
+import { getSupabase, getServiceSupabase } from "./supabase";
 import { saveSession, loadSession, clearSession } from "./session-store";
 import { IpcChannel, type AuthState } from "@shared/types";
 import { resetConversationCache } from "./conversation";
@@ -15,6 +15,66 @@ export async function startSignIn(email: string): Promise<void> {
     options: { emailRedirectTo: "nova://auth-callback" },
   });
   if (error) throw error;
+}
+
+/** Email + password sign-in — the normal path, no deep link involved. */
+export async function signInWithPassword(
+  email: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const e = email.trim();
+  if (!e || !password) return { ok: false, error: "Enter your email and password." };
+  const { data, error } = await getSupabase().auth.signInWithPassword({ email: e, password });
+  if (error) return { ok: false, error: error.message };
+  if (data.session) {
+    saveSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+    emit(IpcChannel.AuthChanged, await getAuthState());
+    return { ok: true };
+  }
+  return { ok: false, error: "No session returned." };
+}
+
+/**
+ * Sets (or resets) the password for an account and signs in — for first-time
+ * setup or a forgotten password. Uses the service role to update the user, so
+ * no email round-trip is needed. If the account doesn't exist yet, it's
+ * created with the email pre-confirmed.
+ */
+export async function setPasswordAndSignIn(
+  email: string,
+  password: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const e = email.trim();
+  if (!e) return { ok: false, error: "Enter your email." };
+  if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
+
+  let admin;
+  try {
+    admin = getServiceSupabase();
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Service role not configured." };
+  }
+
+  try {
+    const { data, error } = await admin.auth.admin.listUsers();
+    if (error) return { ok: false, error: error.message };
+    const existing = data.users.find((u) => u.email?.toLowerCase() === e.toLowerCase());
+    if (existing) {
+      const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, { password });
+      if (updErr) return { ok: false, error: updErr.message };
+    } else {
+      const { error: createErr } = await admin.auth.admin.createUser({
+        email: e,
+        password,
+        email_confirm: true,
+      });
+      if (createErr) return { ok: false, error: createErr.message };
+    }
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't set password." };
+  }
+
+  return signInWithPassword(e, password);
 }
 
 export async function handleAuthCallback(url: string): Promise<void> {

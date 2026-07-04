@@ -19,7 +19,7 @@ import { initTimerManager } from "./timers";
 import { createTray } from "./tray";
 import { registerIpcHandlers, registerChatBridge, registerWakeBridge, registerWindowHandlers } from "./ipc";
 import { streamChat, cancelChat } from "./chat";
-import { startSignIn, signOut, getAuthState, handleAuthCallback, pasteAuthCallback, restoreSession } from "./auth";
+import { startSignIn, signOut, getAuthState, handleAuthCallback, pasteAuthCallback, signInWithPassword, setPasswordAndSignIn, restoreSession } from "./auth";
 import { WakeWordController, wakeThresholdFromSensitivity } from "./wakeword/index";
 import { IpcChannel, type OrbDragMoveRequest } from "@shared/types";
 
@@ -180,6 +180,14 @@ app.whenReady().then(async () => {
 
   // Manual login fallback (paste the nova://auth-callback URL).
   ipcMain.handle(IpcChannel.AuthPasteCallback, (_e, url: string) => pasteAuthCallback(url));
+
+  // Email + password sign-in (no deep link).
+  ipcMain.handle(IpcChannel.AuthSignInPassword, (_e, req: { email: string; password: string }) =>
+    signInWithPassword(req.email, req.password),
+  );
+  ipcMain.handle(IpcChannel.AuthSetPassword, (_e, req: { email: string; password: string }) =>
+    setPasswordAndSignIn(req.email, req.password),
+  );
 
   // Prefs
   ipcMain.handle(IpcChannel.PrefsGet, () =>
