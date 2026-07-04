@@ -35,7 +35,7 @@ import {
   hasAccessibility,
   openPrivacySettings,
   controlMedia,
-  playOnYouTubeMusic,
+  playOnYouTube,
   type MediaAction,
 } from "./mac-control";
 import { captureScreen } from "./screen";
@@ -133,8 +133,8 @@ export async function executeTool(
           return handleSeeScreen(input);
         case "control_media":
           return handleControlMedia(input);
-        case "play_youtube_music":
-          return handlePlayYouTubeMusic(input);
+        case "play_youtube":
+          return handlePlayYouTube(input);
         case "composio_search_tools":
           return import("./composio").then((m) => m.handleComposioSearchTools(input));
         case "composio_execute":
@@ -737,10 +737,10 @@ async function handleControlMedia(input: unknown): Promise<Record<string, unknow
   return { success: true, ...r };
 }
 
-async function handlePlayYouTubeMusic(input: unknown): Promise<Record<string, unknown>> {
+async function handlePlayYouTube(input: unknown): Promise<Record<string, unknown>> {
   const { query } = input as { query?: string };
   if (!query?.trim()) return { error: "query is required" };
-  const r = await playOnYouTubeMusic(query.trim());
+  const r = await playOnYouTube(query.trim());
   return { success: true, ...r };
 }
 

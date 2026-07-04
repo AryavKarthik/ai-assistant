@@ -399,14 +399,13 @@ async function firstYouTubeVideoId(query: string): Promise<string | null> {
 }
 
 /**
- * Plays a query on YouTube Music. Rather than driving the fragile web UI, it
- * resolves the top matching track's video id from YouTube search and opens the
- * YouTube Music WATCH url for it, which the player autoplays — in the user's
- * default browser, on their signed-in account. Falls back to opening the
- * search page if no id could be resolved. No Accessibility needed (just opens
- * a URL); transport control afterwards is control_media.
+ * Plays a query on YouTube (the regular site, not YouTube Music). Resolves the
+ * top matching video id from YouTube search and opens its watch URL with
+ * autoplay, which plays reliably in the default browser without any sign-in or
+ * catalog restriction. Falls back to the results page if no id resolves. No
+ * Accessibility needed; transport control afterwards is control_media.
  */
-export async function playOnYouTubeMusic(query: string): Promise<{ played: boolean; note: string }> {
+export async function playOnYouTube(query: string): Promise<{ played: boolean; note: string }> {
   const q = query.trim();
   if (!q) throw new Error("query is required");
 
@@ -414,13 +413,13 @@ export async function playOnYouTubeMusic(query: string): Promise<{ played: boole
   const videoId = await firstYouTubeVideoId(q);
 
   if (videoId) {
-    await shell.openExternal(`https://music.youtube.com/watch?v=${videoId}`);
-    return { played: true, note: `Playing "${q}" on YouTube Music.` };
+    await shell.openExternal(`https://www.youtube.com/watch?v=${videoId}&autoplay=1`);
+    return { played: true, note: `Playing "${q}" on YouTube.` };
   }
 
-  await shell.openExternal(`https://music.youtube.com/search?q=${encodeURIComponent(q)}`);
+  await shell.openExternal(`https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`);
   return {
     played: false,
-    note: `Couldn't resolve a track for "${q}", so I opened the YouTube Music search — pick one, then say "pause"/"skip" to control it.`,
+    note: `Couldn't resolve a video for "${q}", so I opened the YouTube search — pick one.`,
   };
 }

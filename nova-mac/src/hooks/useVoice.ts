@@ -312,7 +312,10 @@ export function useVoice(): {
     }
     sendTextRef.current = runTextTurn;
 
-    async function runTurn() {
+    // `followup: true` means this is a continuation of an ongoing conversation
+    // (re-listen right after a reply) rather than a fresh wake — it waits a bit
+    // less for speech and ends quietly (back to sleep) if nothing comes.
+    async function runTurn(opts?: { followup?: boolean }) {
       busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
@@ -361,7 +364,10 @@ export function useVoice(): {
           {
             silenceMs: prefs.current.silenceMs,
             threshold: speechThreshold(prefs.current.listeningSensitivity),
-            noSpeechTimeoutMs: prefs.current.noSpeechTimeoutMs,
+            // Shorter give-up window mid-conversation so it drops back to sleep
+            // promptly when you're actually done, without cutting off a first
+            // wake utterance.
+            noSpeechTimeoutMs: opts?.followup ? 4000 : prefs.current.noSpeechTimeoutMs,
             // Warm calibration: reuse the noise floor measured last turn so
             // the gate doesn't spend its calibration window re-learning the
             // same room (and can't be fooled by calibrating mid-sentence).
@@ -390,15 +396,15 @@ export function useVoice(): {
       // the conversation.
       if (audio.size < MIN_SPEECH_BLOB_BYTES) {
         abortSttStream();
-        if (
-          prefs.current.interactionMode === "conversation" &&
-          consecutiveNoiseTurns.current < 2
-        ) {
+        if (consecutiveNoiseTurns.current < 2) {
+          // A blip or a quiet gap — listen again rather than bailing.
           consecutiveNoiseTurns.current++;
-          void runTurn();
+          void runTurn({ followup: true });
           return;
         }
-        showError("Nothing heard");
+        // Genuinely nothing — conversation's over. Quietly go back to sleep,
+        // no error sound/text (that read as babying).
+        dispatch({ type: "dismiss" });
         endTurn();
         return;
       }
@@ -435,7 +441,8 @@ export function useVoice(): {
       }
 
       if (!transcript) {
-        showError("Nothing heard");
+        // Quiet end — no "nothing heard" error.
+        dispatch({ type: "dismiss" });
         endTurn();
         return;
       }
@@ -461,14 +468,11 @@ export function useVoice(): {
       // all", "thank you very much", ...) before ever calling Claude.
       const sanitized = sanitizeTranscript(transcript);
       if (!sanitized) {
-        // Noise, not real speech. In conversation mode, listen again rather
-        // than silently dropping out of the conversation.
-        if (
-          prefs.current.interactionMode === "conversation" &&
-          consecutiveNoiseTurns.current < 2
-        ) {
+        // Noise/hallucination, not real speech — listen again rather than
+        // dropping the conversation.
+        if (consecutiveNoiseTurns.current < 2) {
           consecutiveNoiseTurns.current++;
-          void runTurn();
+          void runTurn({ followup: true });
           return;
         }
         dispatch({ type: "dismiss" });
@@ -514,10 +518,9 @@ export function useVoice(): {
       dispatch({ type: "submit", transcript });
       const id = `turn-${++reqId.current}`;
 
-      let currentSpeaker = prefs.current.spokenReplies
+      const currentSpeaker = prefs.current.spokenReplies
         ? player.current.playStreaming(ttsOptions())
         : null;
-      let replyText = "";
       // Once a barge-in commits to a new turn (or a stop phrase), the original
       // turn's completion path must not also end/re-listen.
       let bargeCommitted = false;
@@ -533,8 +536,12 @@ export function useVoice(): {
 
       function finishTurn() {
         dispatch({ type: "settle" });
-        if (prefs.current.interactionMode === "conversation") void runTurn();
-        else endTurn();
+        // Keep the conversation flowing: after every reply, listen for a
+        // follow-up. "Hey Jarvis" opens the conversation; it stays open
+        // turn-to-turn and only drops back to sleep when you fall silent (or
+        // say a kill word). Wake word ↔ conversation are interlinked, not
+        // either/or.
+        void runTurn({ followup: true });
       }
 
       // Interrupt handling. Deterministic and never stuck: an interrupt stops
@@ -613,7 +620,6 @@ export function useVoice(): {
           cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
           dispatch({ type: "responseStart" }); // purple → green only now
         }
-        replyText += p.delta;
         dispatch({ type: "responseDelta", delta: p.delta });
         currentSpeaker?.feed(p.delta);
       });

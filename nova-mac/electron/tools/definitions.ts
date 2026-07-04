@@ -546,15 +546,15 @@ export const TOOL_DEFINITIONS: Tool[] = [
     },
   },
   {
-    name: "play_youtube_music",
+    name: "play_youtube",
     description:
-      "Play a song, artist, album, or playlist on YouTube Music using the user's signed-in account. Opens music.youtube.com to the search and starts the top result. Use whenever the user asks to play music / a specific song on YouTube Music. For pause/skip once it's playing, use control_media.",
+      "Play a song, video, or anything on YouTube. Opens the top matching video playing in the browser. Use whenever the user asks to play music, a song, or a video ('play Blinding Lights', 'put on some lofi', 'play that trailer'). For pause/skip once it's playing, use control_media.",
     input_schema: {
       type: "object",
       properties: {
         query: {
           type: "string",
-          description: "What to play — e.g. 'Blinding Lights', 'lofi beats', 'Taylor Swift'",
+          description: "What to play — e.g. 'Blinding Lights', 'lofi beats', 'SpaceX launch'",
         },
       },
       required: ["query"],

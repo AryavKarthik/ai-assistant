@@ -136,7 +136,7 @@ function transcriptOf(s: Session): string {
  * results. Throws when the stream errored and produced nothing usable, so the
  * caller can fall back to batch STT.
  */
-export async function stopSttStream(timeoutMs = 2000): Promise<string> {
+export async function stopSttStream(timeoutMs = 1000): Promise<string> {
   const s = session;
   session = null;
   if (!s) return "";
@@ -147,9 +147,13 @@ export async function stopSttStream(timeoutMs = 2000): Promise<string> {
     // already destroyed
   }
 
+  // Usually resolves in well under the timeout via onEnd; the cap just bounds
+  // the rare case where Google is slow to flush. If we already have a finalized
+  // transcript, don't wait long at all — the tail is captured by the interim.
   if (!s.ended) {
+    const grace = s.finals.length > 0 ? Math.min(timeoutMs, 400) : timeoutMs;
     await new Promise<void>((resolve) => {
-      const t = setTimeout(resolve, timeoutMs);
+      const t = setTimeout(resolve, grace);
       s.onEnd.push(() => {
         clearTimeout(t);
         resolve();
