@@ -65,6 +65,20 @@ export interface NovaBridge {
   remindersGet(): Promise<unknown>;
   remindersDone(id: string): Promise<void>;
   remindersDelete(id: string): Promise<void>;
+  /** Proactive announcement (reminder/calendar/timer/loop) to show + speak. */
+  onProactiveSpeak(
+    cb: (p: import("@shared/types").ProactiveSpeakEvent) => void,
+  ): () => void;
+  loopsList(): Promise<import("@shared/types").AgentLoop[]>;
+  loopsUpsert(
+    req: import("@shared/types").LoopUpsertRequest,
+  ): Promise<import("@shared/types").AgentLoop>;
+  loopsDelete(id: string): Promise<boolean>;
+  loopsRunNow(id: string): Promise<{ ok: boolean; result?: string; error?: string }>;
+  personalityList(): Promise<import("@shared/types").PersonalityTrait[]>;
+  personalityAdd(text: string): Promise<import("@shared/types").PersonalityTrait>;
+  personalityUpdate(req: { id: string; text: string }): Promise<boolean>;
+  personalityDelete(id: string): Promise<boolean>;
   memorySearch(req: unknown): Promise<unknown>;
   memoryPin(req: unknown): Promise<void>;
   memoryArchive(req: unknown): Promise<void>;

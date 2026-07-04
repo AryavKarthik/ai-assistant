@@ -135,6 +135,14 @@ export async function executeTool(
           return handleControlMedia(input);
         case "play_youtube":
           return handlePlayYouTube(input);
+        case "create_agent_loop":
+          return handleCreateAgentLoop(input);
+        case "list_agent_loops":
+          return handleListAgentLoops();
+        case "delete_agent_loop":
+          return handleDeleteAgentLoop(input);
+        case "adjust_personality":
+          return handleAdjustPersonality(input);
         case "composio_search_tools":
           return import("./composio").then((m) => m.handleComposioSearchTools(input));
         case "composio_execute":
@@ -767,4 +775,103 @@ async function handleRecommendYoutube(
   if (!topic?.trim()) return { error: "topic is required" };
   const result = await recommendYoutube(context.userId, topic.trim());
   return result as Record<string, unknown>;
+}
+
+// ── Agent loops + personality ────────────────────────────────────────────────
+// Lazy imports: these stores read electron's userData path, which vitest can
+// only satisfy when the test actually mocks electron.
+
+async function handleCreateAgentLoop(input: unknown): Promise<Record<string, unknown>> {
+  const fields = input as {
+    name?: string;
+    instruction?: string;
+    schedule_type?: string;
+    at?: string;
+    time_local?: string;
+    every_minutes?: number;
+    speak_result?: boolean;
+  };
+  if (!fields.instruction?.trim()) return { error: "instruction is required" };
+
+  let schedule: import("@shared/types").LoopSchedule;
+  switch (fields.schedule_type) {
+    case "once": {
+      if (!fields.at) return { error: "at (ISO datetime) is required for a once schedule" };
+      if (Number.isNaN(Date.parse(fields.at))) return { error: `invalid datetime: ${fields.at}` };
+      schedule = { kind: "once", at: fields.at };
+      break;
+    }
+    case "daily": {
+      if (!/^\d{1,2}:\d{2}$/.test(fields.time_local ?? "")) {
+        return { error: "time_local ('HH:MM') is required for a daily schedule" };
+      }
+      schedule = { kind: "daily", timeLocal: fields.time_local! };
+      break;
+    }
+    case "interval": {
+      if (!fields.every_minutes || fields.every_minutes < 1) {
+        return { error: "every_minutes (>= 1) is required for an interval schedule" };
+      }
+      schedule = { kind: "interval", everyMinutes: Math.round(fields.every_minutes) };
+      break;
+    }
+    default:
+      return { error: "schedule_type must be once, daily, or interval" };
+  }
+
+  const { upsertLoop } = await import("../proactive/loops-store");
+  const loop = upsertLoop({
+    name: fields.name?.trim() || "Scheduled task",
+    instruction: fields.instruction.trim(),
+    schedule,
+    enabled: true,
+    speakResult: fields.speak_result !== false,
+  });
+  return {
+    success: true,
+    loop_id: loop.id,
+    name: loop.name,
+    next_run_at: loop.nextRunAt,
+  };
+}
+
+async function handleListAgentLoops(): Promise<Record<string, unknown>> {
+  const { listLoops } = await import("../proactive/loops-store");
+  return {
+    loops: listLoops().map((l) => ({
+      loop_id: l.id,
+      name: l.name,
+      instruction: l.instruction,
+      schedule: l.schedule,
+      enabled: l.enabled,
+      next_run_at: l.nextRunAt,
+      last_run_at: l.lastRunAt,
+      last_result: l.lastResult,
+    })),
+  };
+}
+
+async function handleDeleteAgentLoop(input: unknown): Promise<Record<string, unknown>> {
+  const { loop_id } = input as { loop_id?: string };
+  if (!loop_id?.trim()) return { error: "loop_id is required" };
+  const { deleteLoop } = await import("../proactive/loops-store");
+  return deleteLoop(loop_id.trim())
+    ? { success: true }
+    : { error: "No loop with that id — call list_agent_loops first" };
+}
+
+async function handleAdjustPersonality(input: unknown): Promise<Record<string, unknown>> {
+  const { action, trait } = input as { action?: string; trait?: string };
+  if (!trait?.trim()) return { error: "trait is required" };
+  const store = await import("../personality/store");
+  if (action === "add") {
+    const added = store.addTrait(trait, "chat");
+    return { success: true, trait_id: added.id, note: "Trait saved — it now shapes every future conversation." };
+  }
+  if (action === "remove") {
+    return store.removeTraitByText(trait)
+      ? { success: true }
+      : { error: "No matching trait found — it may already be gone" };
+  }
+  return { error: "action must be add or remove" };
 }

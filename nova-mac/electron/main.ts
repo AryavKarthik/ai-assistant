@@ -25,6 +25,8 @@ import { IpcChannel, type OrbDragMoveRequest } from "@shared/types";
 
 let orbWin: BrowserWindow | null = null;
 let appWin: BrowserWindow | null = null;
+/** Proactive scheduler — spoken reminder/calendar pre-alerts + agent loops. */
+let proactive: import("./proactive/scheduler").ProactiveScheduler | null = null;
 // Hold a reference so the tray is not garbage-collected.
 let _trayRef: ReturnType<typeof createTray> | null = null;
 
@@ -141,6 +143,13 @@ app.on("open-url", (event, url) => {
 });
 
 app.whenReady().then(async () => {
+  // Learned personality traits live in userData; the store gets the dir
+  // injected (it can't read electron's `app` itself — vitest loads it in
+  // plain Node via chat-turn).
+  await import("./personality/store").then((m) =>
+    m.initPersonalityStore(app.getPath("userData")),
+  );
+
   registerIpcHandlers({
     ping: async () => "pong",
     authStatus: getAuthState,
@@ -190,21 +199,71 @@ app.whenReady().then(async () => {
   );
 
   // Prefs
-  ipcMain.handle(IpcChannel.PrefsGet, () =>
-    import("./voice/save-preferences").then((m) => m.getAllPreferences()),
-  );
-  ipcMain.handle(IpcChannel.PrefsSet, async (_e, patch: { voice?: unknown; proactive?: unknown }) => {
-    const mod = await import("./voice/save-preferences");
-    if (patch.voice) await mod.saveVoicePreferences(patch.voice as never);
-    if (patch.proactive) await mod.saveProactivePreferences(patch.proactive as Record<string, unknown>);
-    const updated = await mod.getAllPreferences();
-    wake.setThreshold(wakeThresholdFromSensitivity(updated.voice.wakeWordSensitivity));
-    // Broadcast to all windows so orb voice prefs stay in sync
-    for (const w of BrowserWindow.getAllWindows()) {
-      w.webContents.send(IpcChannel.PrefsChanged, updated.voice);
-    }
-    return updated;
+  ipcMain.handle(IpcChannel.PrefsGet, async () => {
+    const [prefs, alertsMod] = await Promise.all([
+      import("./voice/save-preferences").then((m) => m.getAllPreferences()),
+      import("./proactive/alert-prefs"),
+    ]);
+    return { ...prefs, alerts: alertsMod.getAlertPrefs() };
   });
+  ipcMain.handle(
+    IpcChannel.PrefsSet,
+    async (_e, patch: { voice?: unknown; proactive?: unknown; alerts?: unknown }) => {
+      const mod = await import("./voice/save-preferences");
+      if (patch.voice) await mod.saveVoicePreferences(patch.voice as never);
+      if (patch.proactive) await mod.saveProactivePreferences(patch.proactive as Record<string, unknown>);
+      const alertsMod = await import("./proactive/alert-prefs");
+      if (patch.alerts) alertsMod.saveAlertPrefs(patch.alerts as Record<string, never>);
+      const updated = await mod.getAllPreferences();
+      wake.setThreshold(wakeThresholdFromSensitivity(updated.voice.wakeWordSensitivity));
+      proactive?.refreshPrefs();
+      // Broadcast to all windows so orb voice prefs stay in sync
+      for (const w of BrowserWindow.getAllWindows()) {
+        w.webContents.send(IpcChannel.PrefsChanged, updated.voice);
+      }
+      return { ...updated, alerts: alertsMod.getAlertPrefs() };
+    },
+  );
+
+  // Agentic loops (scheduled autonomous prompts — managed in Settings)
+  ipcMain.handle(IpcChannel.LoopsList, () =>
+    import("./proactive/loops-store").then((m) => m.listLoops()),
+  );
+  ipcMain.handle(IpcChannel.LoopsUpsert, (_e, req: import("@shared/types").LoopUpsertRequest) =>
+    import("./proactive/loops-store").then((m) => m.upsertLoop(req)),
+  );
+  ipcMain.handle(IpcChannel.LoopsDelete, (_e, id: string) =>
+    import("./proactive/loops-store").then((m) => m.deleteLoop(id)),
+  );
+  ipcMain.handle(IpcChannel.LoopsRunNow, async (_e, id: string) => {
+    const store = await import("./proactive/loops-store");
+    const loop = store.getLoop(id);
+    if (!loop) return { ok: false, error: "Loop not found" };
+    try {
+      const { runAgentLoop } = await import("./proactive/loop-runner");
+      const result = await runAgentLoop(loop);
+      store.markLoopRan(id, result);
+      return { ok: true, result };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Loop run failed";
+      store.markLoopRan(id, `Failed: ${message}`);
+      return { ok: false, error: message };
+    }
+  });
+
+  // Learned personality traits (viewed/edited in Settings)
+  ipcMain.handle(IpcChannel.PersonalityList, () =>
+    import("./personality/store").then((m) => m.listTraits()),
+  );
+  ipcMain.handle(IpcChannel.PersonalityAdd, (_e, text: string) =>
+    import("./personality/store").then((m) => m.addTrait(text, "manual")),
+  );
+  ipcMain.handle(IpcChannel.PersonalityUpdate, (_e, req: { id: string; text: string }) =>
+    import("./personality/store").then((m) => m.updateTrait(req.id, req.text)),
+  );
+  ipcMain.handle(IpcChannel.PersonalityDelete, (_e, id: string) =>
+    import("./personality/store").then((m) => m.removeTrait(id)),
+  );
 
   // Reminders
   ipcMain.handle(IpcChannel.RemindersGet, () =>
@@ -387,6 +446,8 @@ app.whenReady().then(async () => {
 
   // Session timers (set via the set_timer tool). On fire: notification + orb popup;
   // the orb renderer plays the chime and shows the label (and collapses after).
+  // The spoken "timer's done" goes through the proactive scheduler so it shares
+  // the announcement/DND rules.
   initTimerManager((timer) => {
     if (Notification.isSupported()) {
       new Notification({ title: "Timer done", body: timer.label }).show();
@@ -397,6 +458,7 @@ app.whenReady().then(async () => {
     for (const w of BrowserWindow.getAllWindows()) {
       w.webContents.send(IpcChannel.TimerFired, { id: timer.id, label: timer.label });
     }
+    void proactive?.announceTimerDone(timer.label);
   });
 
   try {
@@ -407,6 +469,17 @@ app.whenReady().then(async () => {
   }
   await restoreSession();
   orbWin = createOrbWindow();
+
+  // Proactive engine: spoken reminder/calendar pre-alerts, agent loops, and
+  // timer-completion speech. Ticks in the background; every announcement
+  // respects the Settings toggles and quiet hours.
+  const { initProactiveScheduler } = await import("./proactive/scheduler");
+  proactive = initProactiveScheduler({
+    activateOrb,
+    broadcast: (channel, payload) => {
+      for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload);
+    },
+  });
 
   // Restore a previously-dragged position, if it's still on a connected display.
   const savedPos = loadOrbPosition();

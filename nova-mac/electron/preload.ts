@@ -100,6 +100,19 @@ contextBridge.exposeInMainWorld("nova", {
   remindersGet: () => ipcRenderer.invoke(IpcChannel.RemindersGet),
   remindersDone: (id: string) => ipcRenderer.invoke(IpcChannel.RemindersDone, id),
   remindersDelete: (id: string) => ipcRenderer.invoke(IpcChannel.RemindersDelete, id),
+  onProactiveSpeak: (cb: (p: unknown) => void): (() => void) => {
+    const h = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on(IpcChannel.ProactiveSpeak, h);
+    return () => ipcRenderer.removeListener(IpcChannel.ProactiveSpeak, h);
+  },
+  loopsList: () => ipcRenderer.invoke(IpcChannel.LoopsList),
+  loopsUpsert: (req: unknown) => ipcRenderer.invoke(IpcChannel.LoopsUpsert, req),
+  loopsDelete: (id: string) => ipcRenderer.invoke(IpcChannel.LoopsDelete, id),
+  loopsRunNow: (id: string) => ipcRenderer.invoke(IpcChannel.LoopsRunNow, id),
+  personalityList: () => ipcRenderer.invoke(IpcChannel.PersonalityList),
+  personalityAdd: (text: string) => ipcRenderer.invoke(IpcChannel.PersonalityAdd, text),
+  personalityUpdate: (req: unknown) => ipcRenderer.invoke(IpcChannel.PersonalityUpdate, req),
+  personalityDelete: (id: string) => ipcRenderer.invoke(IpcChannel.PersonalityDelete, id),
   memorySearch: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemorySearch, req),
   memoryPin: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryPin, req),
   memoryArchive: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryArchive, req),

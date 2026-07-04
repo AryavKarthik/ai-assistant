@@ -255,6 +255,61 @@ export function useVoice(): {
       setTimeout(() => dispatch({ type: "dismiss" }), 7000);
     });
 
+    // Proactive announcements pushed from main (reminder/calendar pre-alerts,
+    // timer speech, agent-loop results). Queued behind any in-flight turn so
+    // Nova never talks over itself, then spoken through the normal TTS player
+    // with the orb in its green "speaking" state.
+    const announceQueue: Array<import("@shared/types").ProactiveSpeakEvent> = [];
+    let announcing = false;
+    let announceRetry: ReturnType<typeof setTimeout> | null = null;
+
+    async function drainAnnouncements() {
+      if (announcing || cancelled) return;
+      if (busyRef.current) {
+        // A voice/text turn is running — try again shortly.
+        announceRetry ??= setTimeout(() => {
+          announceRetry = null;
+          void drainAnnouncements();
+        }, 1500);
+        return;
+      }
+      const next = announceQueue.shift();
+      if (!next) return;
+      announcing = true;
+      busyRef.current = true;
+      try {
+        dispatch({ type: "announce", message: next.noticeText || null });
+        if (next.speechText) {
+          const speaker = player.current.playStreaming(ttsOptions());
+          speaker.feed(next.speechText);
+          try {
+            await speaker.finish();
+          } catch {
+            // synth/playback failure — the notice is still on screen
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          dispatch({ type: "announceEnd" });
+          // Let the notice linger, then clear so the panel can tuck away.
+          if (next.noticeText) setTimeout(() => dispatch({ type: "dismiss" }), 6000);
+          else dispatch({ type: "dismiss" });
+          announcing = false;
+          busyRef.current = false;
+          // Re-arms wake scoring (no-op if it wasn't paused) and lets main
+          // auto-hide the popup it opened for this announcement.
+          nova().voiceTurnEnded();
+          void drainAnnouncements();
+        }
+      }
+    }
+
+    const offProactive = nova().onProactiveSpeak?.((p) => {
+      if (cancelled) return;
+      announceQueue.push(p);
+      void drainAnnouncements();
+    });
+
     function abortSttStream() {
       sttForward.current = false;
       nova().sttStreamAbort();
@@ -752,6 +807,8 @@ export function useVoice(): {
       offWake();
       offPrefs?.();
       offTimer?.();
+      offProactive?.();
+      if (announceRetry) clearTimeout(announceRetry);
       stopWake?.();
       idleAnalyser.stop();
       cleanupTurn.current?.();

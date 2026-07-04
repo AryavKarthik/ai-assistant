@@ -23,6 +23,12 @@ export type OrbEvent =
   | { type: "stop" }
   | { type: "dismiss" }
   | { type: "notice"; message: string }
+  /** A proactive spoken announcement is starting (reminder/calendar/loop):
+   *  green "speaking" orb + optional panel notice, without a voice turn. */
+  | { type: "announce"; message: string | null }
+  /** The announcement finished playing — back to rest, keeping any notice
+   *  visible until its own dismiss timer clears it. */
+  | { type: "announceEnd" }
   | { type: "error"; message: string };
 
 export const INITIAL_ORB_STATE: OrbState = {
@@ -107,6 +113,18 @@ export function orbReducer(state: OrbState, event: OrbEvent): OrbState {
     case "notice":
       return state.name === "dormant"
         ? { ...INITIAL_ORB_STATE, notice: event.message }
+        : state;
+
+    // Proactive announcements only ever start from rest — useVoice queues
+    // them behind any in-flight voice turn.
+    case "announce":
+      return state.name === "dormant"
+        ? { ...state, name: "responding", responseText: "", notice: event.message ?? state.notice }
+        : state;
+
+    case "announceEnd":
+      return state.name === "responding"
+        ? { ...INITIAL_ORB_STATE, notice: state.notice }
         : state;
 
     case "error":

@@ -267,6 +267,45 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   text), which combined with `interactionMode: "conversation"` auto-re-listening after every
   reply into a self-talking loop with no real user input.
 
+## Proactive engine (`electron/proactive/`)
+
+`ProactiveScheduler` (`scheduler.ts`, started from `main.ts`) ticks every 30s and drives
+everything Nova says without being woken:
+
+- **Reminder/calendar pre-alerts**: announced at configurable lead times (`AlertPrefs` in
+  `shared/types.ts`, stored device-locally by `alert-prefs.ts`, edited in Settings → Proactive).
+  Reminders gate on `proactiveMode !== "off"`, calendar on `proactiveMode === "full"` + a
+  connected Google Calendar. Dedup is persisted per `(item, lead)` key in `announce-store.ts`
+  so restarts don't re-announce; stale alerts (Mac was asleep) are skipped, with a longer grace
+  for lead-0 reminders. "Remind me 10 min before X" needs no special machinery — the system
+  prompt tells Claude to set `due_at` 10 minutes before X.
+- **Agent loops** (`loops-store.ts` + `loop-runner.ts`): user-scheduled autonomous prompts
+  (once / daily / every N min, userData JSON) run as a full tool-enabled turn
+  (`getToolDefinitions()`, MAX 8 iterations) whose final text is announced. Created via the
+  `create_agent_loop` / `list_agent_loops` / `delete_agent_loop` tools ("email me at 10:30
+  with…") or Settings → Loops (`LoopsSection.tsx`). Once-loops disable themselves after
+  running; loops run regardless of `proactiveMode` (each is an explicit user artifact), but
+  speech still respects DND. The runner persists the run into the main conversation (real
+  message ids keep FK-backed tool inserts working).
+- **Timer completions**: `initTimerManager`'s callback also calls
+  `proactive.announceTimerDone()` — chime + notice come from the existing `TimerFired` path,
+  the spoken "timer's done" from the scheduler so it shares DND/toggle rules.
+- **Delivery**: quiet hours (`quiet-hours.ts`, `ProactivePrefs.quietHoursStart/End` +
+  `AlertPrefs.quietHoursEnabled`) turn announcements into silent notifications. Otherwise main
+  `activateOrb()`s and broadcasts `IpcChannel.ProactiveSpeak`; `useVoice` queues events behind
+  any in-flight turn (never talks over itself), dispatches the orb-machine `announce` event
+  (green speaking state without a voice turn), plays TTS via the normal `VoicePlayer`, then
+  `announceEnd` + `voiceTurnEnded` so the popup auto-hides.
+
+## Personality (learned traits, `electron/personality/store.ts`)
+
+Style feedback ("swear less", "more banter") is captured by the `adjust_personality` tool and
+stored as trait lines in userData JSON, injected into the **cached** system-prompt block every
+turn (`getPersonalityBlock()` in `chat-turn.ts` — cache only invalidates when traits change).
+Settings → Personality lists/edits/deletes traits. The store does NOT import electron — the
+data dir is injected via `initPersonalityStore(app.getPath("userData"))` in `main.ts`, because
+chat-turn (and its vitest suite, which runs in plain Node) imports the store statically.
+
 ## Mac control tools
 
 `electron/tools/mac-control.ts` (volume via `osascript` — set is **verified by reading the

@@ -575,6 +575,69 @@ export const TOOL_DEFINITIONS: Tool[] = [
     },
   },
   {
+    name: "create_agent_loop",
+    description:
+      "Schedule a task Nova runs autonomously later — a full turn with all tools, whose result is announced out loud. REQUIRED whenever the user asks YOU to do something at a future time or on a repeat: 'send me an email at 10:30 with X', 'every morning at 8 check my calendar and brief me', 'in an hour, check if that page is back up'. Never promise to do something later without creating a loop — you have no other way to act in the future. For plain 'remind me' asks use create_reminder instead; loops are for tasks Nova performs.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Short label, e.g. 'Morning brief'" },
+        instruction: {
+          type: "string",
+          description:
+            "What to do at run time, written as a complete standalone instruction with every detail needed (recipients, content, what to check). No user is present when it runs.",
+        },
+        schedule_type: { type: "string", enum: ["once", "daily", "interval"] },
+        at: {
+          type: "string",
+          description: "For once: ISO 8601 datetime (compute from <runtime_context>)",
+        },
+        time_local: { type: "string", description: "For daily: 'HH:MM' 24h local time" },
+        every_minutes: { type: "integer", description: "For interval: run every N minutes" },
+        speak_result: {
+          type: "boolean",
+          description: "Announce the result out loud when it runs (default true)",
+        },
+      },
+      required: ["name", "instruction", "schedule_type"],
+    },
+  },
+  {
+    name: "list_agent_loops",
+    description:
+      "List the user's scheduled agent loops (autonomous tasks) with their schedules and last results. Use when they ask what's scheduled, or before deleting one.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "delete_agent_loop",
+    description:
+      "Delete/cancel a scheduled agent loop by id (from list_agent_loops). Use when the user cancels a scheduled task.",
+    input_schema: {
+      type: "object",
+      properties: {
+        loop_id: { type: "string" },
+      },
+      required: ["loop_id"],
+    },
+  },
+  {
+    name: "adjust_personality",
+    description:
+      "Permanently adjust how you talk/behave. REQUIRED whenever the user gives feedback about your style or personality — 'swear less', 'stop calling me boss', 'be more blunt', 'I love the banter, keep that', 'talk more like me'. Add a short trait note capturing the feedback (action 'add'), or remove one that no longer applies (action 'remove'). These traits are injected into every future conversation, so this is how you actually evolve — acknowledging feedback without calling this tool changes nothing.",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["add", "remove"] },
+        trait: {
+          type: "string",
+          description:
+            "For add: the style note, imperative and concise, e.g. 'Don't call the user boss' or 'User loves roasts — lean into them'. For remove: the text (or a distinctive part) of the trait to drop.",
+        },
+      },
+      required: ["action", "trait"],
+    },
+  },
+  {
     name: "composio_search_tools",
     description:
       "Search the user's Composio-connected apps (Google Docs, Notion, Slack, ...) for actions matching a task, e.g. query 'create google doc'. Returns action slugs + descriptions. Use before composio_execute when you don't know the exact action slug. Pass include_schemas: true only when you need the argument schema.",

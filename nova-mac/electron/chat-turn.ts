@@ -16,6 +16,7 @@ import {
   autoCaptureFromMessage,
   resolveAssistantText,
 } from "./memory/index";
+import { getPersonalityBlock } from "./personality/store";
 import { getToolDefinitions } from "./tools/definitions";
 import { executeTool, type ToolContext } from "./tools/handlers";
 import {
@@ -78,6 +79,10 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   see_screen: "Looking at your screen…",
   composio_search_tools: "Finding the right tool…",
   composio_execute: "Working in your apps…",
+  create_agent_loop: "Scheduling that…",
+  list_agent_loops: "Checking scheduled tasks…",
+  delete_agent_loop: "Cancelling scheduled task…",
+  adjust_personality: "Noted — adjusting…",
 };
 
 function toolStepLabel(name: string): string {
@@ -218,7 +223,11 @@ export async function streamTurn(
     // tool loop's follow-up calls read it at ~10% price instead of full. This
     // is the main lever on per-turn cost (a screen read makes two model calls,
     // both otherwise re-sending the whole system + ~30 tool schemas).
-    const staticSystem = isVoice ? MAC_VOICE_SYSTEM_PROMPT : MAC_TEXT_SYSTEM_PROMPT;
+    // Learned personality traits ride inside the cached block: they change
+    // rarely (only when the user gives style feedback), so the cache prefix
+    // stays stable between those moments.
+    const staticSystem =
+      (isVoice ? MAC_VOICE_SYSTEM_PROMPT : MAC_TEXT_SYSTEM_PROMPT) + getPersonalityBlock();
     const system = [
       { type: "text" as const, text: staticSystem, cache_control: { type: "ephemeral" as const } },
       { type: "text" as const, text: formatRuntimeClockForPrompt(clock) },

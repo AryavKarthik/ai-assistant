@@ -27,6 +27,11 @@ vi.mock("./conversation", () => ({
   loadLastNMessages: vi.fn().mockResolvedValue([]),
 }));
 
+// The real store reads electron's userData path at import time.
+vi.mock("./personality/store", () => ({
+  getPersonalityBlock: vi.fn().mockReturnValue(""),
+}));
+
 vi.mock("./tools/handlers", () => ({
   executeTool: vi.fn(),
 }));

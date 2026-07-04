@@ -79,6 +79,19 @@ export enum IpcChannel {
   MemoryPin = "memory:pin",
   MemoryArchive = "memory:archive",
   MemoryDelete = "memory:delete",
+  /** Main asks the orb renderer to speak a proactive announcement aloud
+   *  (reminder/calendar pre-alert, timer completion, agent-loop result). */
+  ProactiveSpeak = "proactive:speak",
+  // Agentic loops (scheduled autonomous prompts, managed in Settings)
+  LoopsList = "loops:list",
+  LoopsUpsert = "loops:upsert",
+  LoopsDelete = "loops:delete",
+  LoopsRunNow = "loops:runNow",
+  // Learned personality traits (viewed/edited in Settings)
+  PersonalityList = "personality:list",
+  PersonalityAdd = "personality:add",
+  PersonalityUpdate = "personality:update",
+  PersonalityDelete = "personality:delete",
 }
 
 export interface AuthState {
@@ -255,9 +268,94 @@ export const DEFAULT_PROACTIVE_PREFS: ProactivePrefs = {
   quietHoursEnd: "08:00",
 };
 
+/** Voice-announcement (pre-alert) settings — stored locally on the Mac
+ *  (userData JSON), not in Supabase, since they only affect this device. */
+export interface AlertPrefs {
+  /** Master switch: speak proactive announcements out loud. Off = silent
+   *  notifications only. */
+  voiceAnnouncementsEnabled: boolean;
+  /** Minutes before a reminder's due time to announce it. 0 = at due time.
+   *  Each entry fires one spoken announcement. */
+  reminderLeadMinutes: number[];
+  /** Minutes before a calendar event's start to announce it. */
+  calendarLeadMinutes: number[];
+  /** Speak "timer's done" when a timer fires (the chime/notice always shows). */
+  speakTimerDone: boolean;
+  /** Honor the quiet-hours window (ProactivePrefs.quietHoursStart/End):
+   *  inside it, announcements become silent notifications. */
+  quietHoursEnabled: boolean;
+}
+
+export const DEFAULT_ALERT_PREFS: AlertPrefs = {
+  voiceAnnouncementsEnabled: true,
+  reminderLeadMinutes: [10, 0],
+  calendarLeadMinutes: [10],
+  speakTimerDone: true,
+  quietHoursEnabled: true,
+};
+
 export interface AllPrefs {
   voice: VoicePreferences;
   proactive: ProactivePrefs;
+  alerts: AlertPrefs;
+}
+
+/** A proactive spoken announcement pushed from main to the orb renderer. */
+export interface ProactiveSpeakEvent {
+  id: string;
+  kind: "reminder" | "calendar" | "timer" | "loop";
+  /** Text to show in the orb panel. Empty when another channel already shows
+   *  it (timer notices come via TimerFired). */
+  noticeText: string;
+  /** Text to speak aloud. Empty when voice announcements are muted or quiet
+   *  hours are active — the notice still shows. */
+  speechText: string;
+}
+
+// ── Agentic loops ────────────────────────────────────────────────────────────
+// A loop is a natural-language instruction Nova runs autonomously on a
+// schedule — a full tool-enabled chat turn whose result is spoken/notified.
+
+export type LoopSchedule =
+  | { kind: "once"; at: string } // ISO datetime
+  | { kind: "daily"; timeLocal: string } // "HH:MM" local time
+  | { kind: "interval"; everyMinutes: number };
+
+export interface AgentLoop {
+  id: string;
+  name: string;
+  instruction: string;
+  schedule: LoopSchedule;
+  enabled: boolean;
+  /** Speak the result aloud when the loop runs (quiet hours still apply). */
+  speakResult: boolean;
+  createdAt: string;
+  lastRunAt: string | null;
+  /** Short outcome of the last run (assistant text or error). */
+  lastResult: string | null;
+  /** Next scheduled run (ISO), null when exhausted (a finished "once"). */
+  nextRunAt: string | null;
+}
+
+export interface LoopUpsertRequest {
+  /** Omitted for create. */
+  id?: string;
+  name: string;
+  instruction: string;
+  schedule: LoopSchedule;
+  enabled: boolean;
+  speakResult: boolean;
+}
+
+// ── Learned personality traits ───────────────────────────────────────────────
+
+export interface PersonalityTrait {
+  id: string;
+  /** The trait/style note itself, e.g. "Swears freely" or "Calls the user Ary". */
+  text: string;
+  createdAt: string;
+  /** "chat" = learned from feedback mid-conversation; "manual" = added in Settings. */
+  source: "chat" | "manual";
 }
 
 export type GoogleService = "calendar" | "gmail" | "youtube";

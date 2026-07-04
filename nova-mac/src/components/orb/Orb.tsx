@@ -390,7 +390,23 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
             animate={{ scaleX: wiggle.scaleX, scaleY: wiggle.scaleY, rotate: wiggle.rotate }}
             transition={jellySpring}
           >
-            <VoiceOrb visualMode={visualMode} audioLevel={level} size={ORB_BOX} />
+            {/* Speaking bobble: a gentle vertical bob + breathing scale while
+                the reply is being spoken, on its own wrapper so it composes
+                with (rather than fights) the drag wiggle above. */}
+            <motion.div
+              animate={
+                visualMode === "speaking"
+                  ? { y: [0, -3.5, 0.5, 2.5, 0], scale: [1, 1.025, 1, 0.985, 1] }
+                  : { y: 0, scale: 1 }
+              }
+              transition={
+                visualMode === "speaking"
+                  ? { duration: 1.35, repeat: Infinity, ease: "easeInOut" }
+                  : appleSpring
+              }
+            >
+              <VoiceOrb visualMode={visualMode} audioLevel={level} size={ORB_BOX} />
+            </motion.div>
           </motion.div>
         </motion.div>
       </motion.div>

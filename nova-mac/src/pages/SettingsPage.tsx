@@ -6,11 +6,15 @@ import {
   IconBell,
   IconSparkles,
   IconUser,
+  IconRepeat,
+  IconMoodSmile,
   type Icon,
 } from "@tabler/icons-react";
 import { nova } from "../lib/ipc";
-import type { AllPrefs, VoicePreferences, ProactivePrefs, AuthState } from "@shared/types";
-import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS } from "@shared/types";
+import type { AllPrefs, VoicePreferences, ProactivePrefs, AlertPrefs, AuthState } from "@shared/types";
+import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS, DEFAULT_ALERT_PREFS } from "@shared/types";
+import { LoopsSection } from "../components/settings/LoopsSection";
+import { PersonalitySection } from "../components/settings/PersonalitySection";
 import { GOOGLE_VOICE_QUALITY_OPTIONS, googleTtsVoicesForQuality } from "@shared/google-voices";
 import { Select } from "../components/ui/Select";
 import { cn } from "../lib/utils";
@@ -129,7 +133,15 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 // ─── Sections ─────────────────────────────────────────────────────────────────
 
-type SectionId = "general" | "voice" | "conversation" | "sounds" | "proactive" | "account";
+type SectionId =
+  | "general"
+  | "voice"
+  | "conversation"
+  | "sounds"
+  | "proactive"
+  | "loops"
+  | "personality"
+  | "account";
 
 const SECTIONS: Array<{ id: SectionId; label: string; icon: Icon }> = [
   { id: "general", label: "General", icon: IconAdjustments },
@@ -137,8 +149,42 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: Icon }> = [
   { id: "conversation", label: "Conversation", icon: IconMessageCircle },
   { id: "sounds", label: "Sounds", icon: IconBell },
   { id: "proactive", label: "Proactive", icon: IconSparkles },
+  { id: "loops", label: "Loops", icon: IconRepeat },
+  { id: "personality", label: "Personality", icon: IconMoodSmile },
   { id: "account", label: "Account", icon: IconUser },
 ];
+
+/** Comma-separated minutes editor for announcement lead times ("30, 10, 0"). */
+function LeadTimesInput({
+  value,
+  onCommit,
+}: {
+  value: number[];
+  onCommit: (minutes: number[]) => void;
+}) {
+  const [text, setText] = useState(value.join(", "));
+  useEffect(() => setText(value.join(", ")), [value]);
+  function commit() {
+    const minutes = text
+      .split(/[,\s]+/)
+      .map((v) => Number(v))
+      .filter((v) => Number.isFinite(v) && v >= 0 && v <= 1440)
+      .map((v) => Math.round(v));
+    onCommit([...new Set(minutes)].sort((a, b) => b - a));
+  }
+  return (
+    <input
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      placeholder="e.g. 30, 10, 0"
+      className="w-32 rounded-full border border-white/[0.06] bg-white/[0.06] px-3 py-1.5 text-[12.5px] text-[--nova-text] outline-none focus:border-white/[0.16] text-right"
+    />
+  );
+}
 
 const OPENAI_VOICES = [
   "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse",
@@ -153,6 +199,7 @@ const DEEPGRAM_VOICES = [
 export function SettingsPage() {
   const [voice, setVoice] = useState<VoicePreferences>(DEFAULT_VOICE_PREFERENCES);
   const [proactive, setProactive] = useState<ProactivePrefs>(DEFAULT_PROACTIVE_PREFS);
+  const [alerts, setAlerts] = useState<AlertPrefs>(DEFAULT_ALERT_PREFS);
   const [section, setSection] = useState<SectionId>("general");
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [auth, setAuth] = useState<AuthState>({ signedIn: false, email: null });
@@ -164,6 +211,7 @@ export function SettingsPage() {
       const all = p as AllPrefs;
       setVoice({ ...DEFAULT_VOICE_PREFERENCES, ...all.voice });
       setProactive({ ...DEFAULT_PROACTIVE_PREFS, ...all.proactive });
+      setAlerts({ ...DEFAULT_ALERT_PREFS, ...all.alerts });
     }).catch(() => {});
     nova().authStatus().then(setAuth).catch(() => {});
     return () => {
@@ -172,10 +220,14 @@ export function SettingsPage() {
     };
   }, []);
 
-  async function persist(voiceNext: VoicePreferences, proactiveNext: ProactivePrefs) {
+  async function persist(
+    voiceNext: VoicePreferences,
+    proactiveNext: ProactivePrefs,
+    alertsNext: AlertPrefs,
+  ) {
     setSaveState("saving");
     try {
-      await nova().prefsSet({ voice: voiceNext, proactive: proactiveNext });
+      await nova().prefsSet({ voice: voiceNext, proactive: proactiveNext, alerts: alertsNext });
       setSaveState("saved");
       if (savedTimerRef.current) clearTimeout(savedTimerRef.current);
       savedTimerRef.current = setTimeout(() => setSaveState("idle"), 1500);
@@ -185,12 +237,18 @@ export function SettingsPage() {
   }
 
   /** Immediate save — toggles, selects, discrete inputs. */
-  function save(voicePatch?: Partial<VoicePreferences>, proactivePatch?: Partial<ProactivePrefs>) {
+  function save(
+    voicePatch?: Partial<VoicePreferences>,
+    proactivePatch?: Partial<ProactivePrefs>,
+    alertsPatch?: Partial<AlertPrefs>,
+  ) {
     const v = voicePatch ? { ...voice, ...voicePatch } : voice;
     const p = proactivePatch ? { ...proactive, ...proactivePatch } : proactive;
+    const a = alertsPatch ? { ...alerts, ...alertsPatch } : alerts;
     if (voicePatch) setVoice(v);
     if (proactivePatch) setProactive(p);
-    void persist(v, p);
+    if (alertsPatch) setAlerts(a);
+    void persist(v, p, a);
   }
 
   /** Debounced save — sliders that fire on every tick. */
@@ -198,7 +256,7 @@ export function SettingsPage() {
     const v = { ...voice, ...voicePatch };
     setVoice(v);
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => void persist(v, proactive), 500);
+    debounceRef.current = setTimeout(() => void persist(v, proactive, alerts), 500);
   }
 
   return (
@@ -467,7 +525,46 @@ export function SettingsPage() {
 
             {section === "proactive" && (
               <>
-                <SectionTitle title="Proactive" subtitle="Briefs and nudges Nova sends on its own." />
+                <SectionTitle
+                  title="Proactive"
+                  subtitle="Nova speaking up on its own — pre-alerts, timers, and briefs."
+                />
+                <Group>
+                  <Row
+                    label="Speak announcements aloud"
+                    description="Reminder and calendar pre-alerts, timer completions, and loop results are spoken through the orb. Off = silent notifications only."
+                  >
+                    <Toggle
+                      value={alerts.voiceAnnouncementsEnabled}
+                      onChange={(v) => save(undefined, undefined, { voiceAnnouncementsEnabled: v })}
+                    />
+                  </Row>
+                  <Row
+                    label="Reminder pre-alerts"
+                    description="Minutes before a reminder is due to announce it. Comma-separated; 0 = at the due time."
+                  >
+                    <LeadTimesInput
+                      value={alerts.reminderLeadMinutes}
+                      onCommit={(m) => save(undefined, undefined, { reminderLeadMinutes: m })}
+                    />
+                  </Row>
+                  <Row
+                    label="Calendar pre-alerts"
+                    description="Minutes before an event starts to announce it (needs Google Calendar connected and Proactive mode set to Full)."
+                  >
+                    <LeadTimesInput
+                      value={alerts.calendarLeadMinutes}
+                      onCommit={(m) => save(undefined, undefined, { calendarLeadMinutes: m })}
+                    />
+                  </Row>
+                  <Row label="Speak when timers finish" description="“Timer's done” out loud, on top of the chime.">
+                    <Toggle
+                      value={alerts.speakTimerDone}
+                      onChange={(v) => save(undefined, undefined, { speakTimerDone: v })}
+                    />
+                  </Row>
+                </Group>
+                <GroupLabel>Mode</GroupLabel>
                 <Group>
                   <Row label="Proactive mode">
                     <Select
@@ -499,7 +596,16 @@ export function SettingsPage() {
                 </Group>
                 <GroupLabel>Quiet hours</GroupLabel>
                 <Group>
-                  <Row label="Do not disturb" description="No proactive notifications in this window.">
+                  <Row
+                    label="Do not disturb"
+                    description="Inside this window Nova never speaks on its own — announcements become silent notifications."
+                  >
+                    <Toggle
+                      value={alerts.quietHoursEnabled}
+                      onChange={(v) => save(undefined, undefined, { quietHoursEnabled: v })}
+                    />
+                  </Row>
+                  <Row label="Window">
                     <div className="flex items-center gap-2 text-sm">
                       <input
                         type="time"
@@ -517,6 +623,26 @@ export function SettingsPage() {
                     </div>
                   </Row>
                 </Group>
+              </>
+            )}
+
+            {section === "loops" && (
+              <>
+                <SectionTitle
+                  title="Loops"
+                  subtitle="Scheduled tasks Nova runs autonomously and reports back on."
+                />
+                <LoopsSection Toggle={Toggle} Group={Group} Row={Row} />
+              </>
+            )}
+
+            {section === "personality" && (
+              <>
+                <SectionTitle
+                  title="Personality"
+                  subtitle="What Nova has learned about how you want it to talk."
+                />
+                <PersonalitySection Group={Group} />
               </>
             )}
 
