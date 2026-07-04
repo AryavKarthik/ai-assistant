@@ -664,6 +664,24 @@ export function useVoice(): {
           firstDelta = false;
           cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
           dispatch({ type: "responseStart" }); // purple → green only now
+          // Arm barge-in HERE, not at the top of startReply. The listener's
+          // cooldown window (~750-1100ms) calibrates its "ambient" baseline
+          // from whatever the mic hears while it counts down, then judges
+          // anything louder than that baseline as a barge-in. Arming it the
+          // instant the network call is sent means that whole window elapses
+          // during the silent "thinking" phase (model latency is often
+          // 1-3s+) — baseline calibrates to a SILENT room, the cooldown
+          // expires before TTS ever makes a sound, and then the first bit of
+          // the AI's own voice (which leaks into the mic at least partially
+          // even with echo cancellation) reads as a huge spike over that
+          // near-zero baseline and immediately self-triggers a "barge-in" —
+          // the AI interrupting itself, repeatedly, on its own voice. Arming
+          // it right as real speech starts means the calibration window
+          // instead measures the TTS's own bleed-through as "ambient," so a
+          // genuine interruption has to be louder than the AI's own voice on
+          // top of that baseline to register — which is what barge-in is
+          // actually supposed to detect.
+          armBarge();
         }
         replyText += p.delta;
         dispatch({ type: "responseDelta", delta: p.delta });
@@ -712,7 +730,8 @@ export function useVoice(): {
       }
 
       cleanupTurn.current = cleanup;
-      armBarge();
+      // armBarge() is called from offDelta's firstDelta branch above, once
+      // real speech actually starts — see the comment there.
 
       nova().chatSend({
         requestId: id,
