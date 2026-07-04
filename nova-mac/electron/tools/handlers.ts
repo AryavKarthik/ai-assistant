@@ -34,6 +34,9 @@ import {
   setClockTimer,
   hasAccessibility,
   openPrivacySettings,
+  controlMedia,
+  playOnYouTubeMusic,
+  type MediaAction,
 } from "./mac-control";
 import { getTimerManager } from "../timers";
 
@@ -123,6 +126,10 @@ export async function executeTool(
           return listShortcuts() as Promise<Record<string, unknown>>;
         case "check_mac_permissions":
           return handleCheckMacPermissions(input);
+        case "control_media":
+          return handleControlMedia(input);
+        case "play_youtube_music":
+          return handlePlayYouTubeMusic(input);
         case "composio_search_tools":
           return import("./composio").then((m) => m.handleComposioSearchTools(input));
         case "composio_execute":
@@ -669,6 +676,22 @@ async function handleCheckMacPermissions(input: unknown): Promise<Record<string,
             (open_settings ? " I opened that pane for you." : ""),
         }),
   };
+}
+
+async function handleControlMedia(input: unknown): Promise<Record<string, unknown>> {
+  const { action } = input as { action?: string };
+  if (action !== "playpause" && action !== "next" && action !== "previous") {
+    return { error: "action must be playpause, next, or previous" };
+  }
+  const r = await controlMedia(action as MediaAction);
+  return { success: true, ...r };
+}
+
+async function handlePlayYouTubeMusic(input: unknown): Promise<Record<string, unknown>> {
+  const { query } = input as { query?: string };
+  if (!query?.trim()) return { error: "query is required" };
+  const r = await playOnYouTubeMusic(query.trim());
+  return { success: true, ...r };
 }
 
 async function handleRunAppleScript(input: unknown): Promise<Record<string, unknown>> {

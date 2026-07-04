@@ -496,6 +496,37 @@ export const TOOL_DEFINITIONS: Tool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "control_media",
+    description:
+      "Play/pause or skip whatever audio is currently playing on the Mac — YouTube Music in a browser, Spotify, Apple Music, a video, etc. Use for 'pause', 'resume', 'play/pause', 'skip', 'next song', 'previous song', 'go back'. This is the reliable way to control playback that's already going. Needs Accessibility permission (the result says so if it's missing).",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["playpause", "next", "previous"],
+          description: "playpause toggles play/pause; next skips forward; previous goes back",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "play_youtube_music",
+    description:
+      "Play a song, artist, album, or playlist on YouTube Music using the user's signed-in account. Opens music.youtube.com to the search and starts the top result. Use whenever the user asks to play music / a specific song on YouTube Music. For pause/skip once it's playing, use control_media.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "What to play — e.g. 'Blinding Lights', 'lofi beats', 'Taylor Swift'",
+        },
+      },
+      required: ["query"],
+    },
+  },
+  {
     name: "check_mac_permissions",
     description:
       "Check whether Nova has macOS Accessibility permission (needed to control apps/browsers via UI scripting — e.g. setting a Clock timer, clicking around in Safari/Chrome). Call this when a UI-automation attempt failed on permissions, or when the user asks why app control isn't working. If not granted, opening the Settings pane is offered.",

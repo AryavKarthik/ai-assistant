@@ -70,6 +70,8 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   run_shortcut: "Running shortcut…",
   list_shortcuts: "Checking shortcuts…",
   check_mac_permissions: "Checking permissions…",
+  control_media: "Controlling playback…",
+  play_youtube_music: "Putting on music…",
   composio_search_tools: "Finding the right tool…",
   composio_execute: "Working in your apps…",
 };

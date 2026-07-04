@@ -328,3 +328,103 @@ export async function listShortcuts(): Promise<{ shortcuts: string[] }> {
   const out = await run("/usr/bin/shortcuts", ["list"], 10_000);
   return { shortcuts: out.split("\n").map((s) => s.trim()).filter(Boolean) };
 }
+
+// ─── Media playback (system-wide) ────────────────────────────────────────────
+
+// NX media-key codes posted to the "Now Playing" session — controls whatever
+// is currently playing (YouTube Music in a browser, Spotify, Apple Music, …).
+const MEDIA_KEYS = {
+  playpause: 16, // NX_KEYTYPE_PLAY
+  next: 17, // NX_KEYTYPE_NEXT
+  previous: 18, // NX_KEYTYPE_PREVIOUS
+} as const;
+
+export type MediaAction = keyof typeof MEDIA_KEYS;
+
+/**
+ * Play/pause/skip whatever media is currently playing, by posting the macOS
+ * media keys via a JXA (JavaScript for Automation) osascript. Modern Chrome
+ * and Safari register web media (YouTube Music, etc.) with the system Now
+ * Playing session, so this controls a browser tab too — no per-browser
+ * "Allow JavaScript from Apple Events" toggle needed. Requires Accessibility
+ * (CGEventPost is gated on it).
+ */
+export async function controlMedia(action: MediaAction): Promise<{ action: MediaAction }> {
+  await requireAccessibility();
+  const keyCode = MEDIA_KEYS[action];
+  if (keyCode === undefined) throw new Error(`Unknown media action: ${action}`);
+  // JXA posts an NSSystemDefined event down+up for the media key.
+  const jxa = `
+ObjC.import('Cocoa');
+function mediaKey(k){
+  function post(down){
+    var data1 = (k << 16) | ((down ? 0xA : 0xB) << 8);
+    var ev = $.NSEvent.otherEventWithTypeLocationModifierFlagsTimestampWindowNumberContextSubtypeData1Data2(
+      14, $.NSMakePoint(0,0), (down ? 0xA00 : 0xB00), 0, 0, $(), 8, data1, -1);
+    $.CGEventPost(0, ev.CGEvent);
+  }
+  post(true); post(false);
+}
+mediaKey(${keyCode});
+`;
+  try {
+    await run("/usr/bin/osascript", ["-l", "JavaScript", "-e", jxa], 8_000);
+  } catch (err) {
+    throw explainAutomationError(err);
+  }
+  return { action };
+}
+
+/**
+ * Plays a search on YouTube Music: opens (or focuses) music.youtube.com to the
+ * query in the user's browser and best-effort auto-plays the top result by
+ * driving the page — falls back to leaving the results on screen when the
+ * browser blocks scripting. Uses the user's signed-in YT Music account, so it
+ * respects their library and recommendations.
+ */
+export async function playOnYouTubeMusic(query: string): Promise<{ played: boolean; note: string }> {
+  const q = query.trim();
+  if (!q) throw new Error("query is required");
+  const searchUrl = `https://music.youtube.com/search?q=${encodeURIComponent(q)}`;
+
+  const { shell } = await import("electron");
+  await shell.openExternal(searchUrl);
+
+  // Give the page a moment, then try to click the first result via whichever
+  // Chromium/Safari browser is frontmost. This needs the browser's Automation
+  // permission; if it's blocked we still left the results open for the user.
+  const js =
+    "(function(){var el=document.querySelector('ytmusic-responsive-list-item-renderer');" +
+    "if(el){var p=el.querySelector('#play-button, button[aria-label*=\\\"Play\\\"], .play-button');" +
+    "if(p){p.click();return 'played';} el.click(); return 'clicked';} return 'no-results';})();";
+  const script = `
+delay 2.5
+set didPlay to false
+tell application "System Events"
+  set frontApp to name of first application process whose frontmost is true
+end tell
+try
+  if frontApp is "Google Chrome" or frontApp is "Brave Browser" or frontApp is "Microsoft Edge" or frontApp is "Arc" then
+    tell application frontApp to set r to (execute active tab of front window javascript ${JSON.stringify(js)})
+    if r is "played" or r is "clicked" then set didPlay to true
+  else if frontApp is "Safari" then
+    tell application "Safari" to set r to (do JavaScript ${JSON.stringify(js)} in front document)
+    if r is "played" or r is "clicked" then set didPlay to true
+  end if
+end try
+return didPlay
+`;
+  let played = false;
+  try {
+    const out = await run("/usr/bin/osascript", ["-e", script], 12_000);
+    played = out.trim() === "true";
+  } catch {
+    // Scripting blocked or browser not scriptable — results are still open.
+  }
+  return {
+    played,
+    note: played
+      ? `Playing "${q}" on YouTube Music.`
+      : `Opened YouTube Music search for "${q}". If it didn't start, say "play" and I'll hit play, or click the song.`,
+  };
+}
