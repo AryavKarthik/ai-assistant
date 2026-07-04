@@ -18,7 +18,7 @@ import {
   updateCalendarEvent,
   deleteCalendarEvent,
 } from "../google/calendar";
-import { searchGmail, getGmailMessage, createGmailDraft } from "../google/gmail";
+import { searchGmail, getGmailMessage, createGmailDraft, sendGmailDraft } from "../google/gmail";
 import { getCachedTasteProfile, searchYoutube, recommendYoutube } from "../google/youtube";
 import {
   setSystemVolume,
@@ -93,6 +93,8 @@ export async function executeTool(
           return handleGetGmailMessage(input, context);
         case "create_gmail_draft":
           return handleCreateGmailDraft(input, context);
+        case "send_email":
+          return handleSendGmail(input, context);
         case "get_youtube_taste_profile":
           return handleGetYoutubeTasteProfile(input, context);
         case "search_youtube":
@@ -514,6 +516,40 @@ async function handleCreateGmailDraft(
     reply_to_message_id: fields.reply_to_message_id,
   });
   return result as Record<string, unknown>;
+}
+
+async function handleSendGmail(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const fields = input as {
+    to?: string;
+    subject?: string;
+    body?: string;
+    cc?: string;
+    bcc?: string;
+    reply_to_message_id?: string;
+  };
+  if (!fields.to?.trim()) return { error: "to is required" };
+  if (!fields.body?.trim()) return { error: "body is required" };
+  // Compose a draft, then send it — reuses the existing draft builder so
+  // threading/cc/bcc are handled identically to create_gmail_draft.
+  const draftRes = await createGmailDraft(context.userId, {
+    to: fields.to.trim(),
+    subject: fields.subject ?? "",
+    body: fields.body.trim(),
+    cc: fields.cc,
+    bcc: fields.bcc,
+    reply_to_message_id: fields.reply_to_message_id,
+  });
+  if ("error" in draftRes) {
+    return draftRes as Record<string, unknown>;
+  }
+  const sendRes = await sendGmailDraft(context.userId, draftRes.draft.draftId);
+  if ("error" in sendRes) {
+    return sendRes as Record<string, unknown>;
+  }
+  return { success: true, sent: true, to: fields.to.trim(), subject: fields.subject ?? "(no subject)" };
 }
 
 // ─── YouTube ──────────────────────────────────────────────────────────────────

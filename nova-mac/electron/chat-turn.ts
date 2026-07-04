@@ -54,6 +54,7 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   search_gmail: "Searching Gmail…",
   get_gmail_message: "Reading email…",
   create_gmail_draft: "Drafting email…",
+  send_email: "Sending email…",
   get_youtube_taste_profile: "Checking YouTube…",
   search_youtube: "Searching YouTube…",
   recommend_youtube: "Finding videos…",

@@ -292,6 +292,26 @@ export const TOOL_DEFINITIONS: Tool[] = [
     },
   },
   {
+    name: "send_email",
+    description:
+      "Actually SEND an email via the user's Gmail. Use this when the user asks to send an email (not just draft one). Because sending is irreversible, confirm the recipient and gist with the user first, then call this. Requires linked Gmail at /connections; if it errors about permission/scope, tell the user to reconnect Gmail there.",
+    input_schema: {
+      type: "object",
+      properties: {
+        to: { type: "string", description: "Recipient email address" },
+        subject: { type: "string", description: "Subject line" },
+        body: { type: "string", description: "Plain-text email body" },
+        cc: { type: "string" },
+        bcc: { type: "string" },
+        reply_to_message_id: {
+          type: "string",
+          description: "Optional Gmail message id to reply in-thread",
+        },
+      },
+      required: ["to", "body"],
+    },
+  },
+  {
     name: "get_youtube_taste_profile",
     description:
       "Get cached YouTube taste profile (subscriptions/likes summary). Requires linked YouTube.",

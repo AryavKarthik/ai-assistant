@@ -488,42 +488,128 @@ export function useVoice(): {
       }
       transcript = sanitized;
 
-      // Deliberately no responseStart here: the orb must stay "processing"
-      // (purple) for the whole Claude round-trip. Dispatching responseStart
-      // in the same tick as submit meant React batched blue→purple→green into
-      // a single green paint — purple never showed and the orb sat green for
-      // seconds before any speech, which read as plain broken.
+      startReply(transcript, stream);
+    }
+
+    function ttsOptions() {
+      return {
+        voice: prefs.current.ttsVoice,
+        speed: prefs.current.ttsSpeed,
+        hd: prefs.current.ttsHd,
+        provider: prefs.current.ttsProvider,
+        deepgramTtsVoice: prefs.current.deepgramTtsVoice,
+        googleTtsVoice: prefs.current.googleTtsVoice,
+        googleTtsQuality: prefs.current.googleTtsQuality,
+      };
+    }
+
+    // Sends `transcript` to Claude and speaks the streamed reply. Handles
+    // barge-in with a probe: an interrupt pauses the reply and listens; only a
+    // real follow-up utterance starts a new turn — if nothing (or just noise)
+    // is heard, it RESUMES speaking the reply it was giving instead of
+    // dropping it.
+    function startReply(transcript: string, stream: MediaStream) {
+      // Orb stays "processing" (purple) until the first token; see the
+      // earlier note on React batching blue→purple→green.
       dispatch({ type: "submit", transcript });
       const id = `turn-${++reqId.current}`;
 
-      const speaker = prefs.current.spokenReplies
-        ? player.current.playStreaming({
-            voice: prefs.current.ttsVoice,
-            speed: prefs.current.ttsSpeed,
-            hd: prefs.current.ttsHd,
-            provider: prefs.current.ttsProvider,
-            deepgramTtsVoice: prefs.current.deepgramTtsVoice,
-            googleTtsVoice: prefs.current.googleTtsVoice,
-            googleTtsQuality: prefs.current.googleTtsQuality,
-          })
+      let currentSpeaker = prefs.current.spokenReplies
+        ? player.current.playStreaming(ttsOptions())
         : null;
+      let replyText = "";
+      // Once a barge-in commits to a new turn (or a stop phrase), the original
+      // turn's completion path must not also end/re-listen.
+      let bargeCommitted = false;
+      let barge: TtsBargeInListener | null = null;
 
-      // Set to true when barge-in fires so the speaker.finish() .then() callback
-      // knows not to call endTurn() / runTurn() (the new turn handles its own lifecycle).
-      let bargeInFired = false;
+      function armBarge() {
+        if (!(prefs.current.bargeInEnabled && prefs.current.spokenReplies)) return;
+        barge = new TtsBargeInListener(
+          ttsBargeInConfigFromSensitivity(prefs.current.bargeInSensitivity),
+        );
+        barge.start(stream, onBarge);
+      }
 
-      const barge = new TtsBargeInListener(
-        ttsBargeInConfigFromSensitivity(prefs.current.bargeInSensitivity),
-      );
-      if (prefs.current.bargeInEnabled && speaker) {
-        barge.start(stream, () => {
-          bargeInFired = true;
-          player.current.stop();
-          nova().chatCancel(id);
-          cue("bargeIn");
-          dispatch({ type: "bargeIn" });
-          void runTurn();
-        });
+      function finishTurn() {
+        dispatch({ type: "settle" });
+        if (prefs.current.interactionMode === "conversation") void runTurn();
+        else endTurn();
+      }
+
+      async function onBarge() {
+        if (bargeCommitted) return;
+        barge?.stop();
+        cleanupListeners();
+        player.current.stop();
+        cue("bargeIn");
+        dispatch({ type: "bargeIn" });
+
+        // Probe: is the user actually talking, or was this a false trigger?
+        let probe: RecordResult | null = null;
+        try {
+          probe = await recordUntilSilence(
+            stream,
+            {
+              silenceMs: prefs.current.silenceMs,
+              threshold: speechThreshold(prefs.current.listeningSensitivity),
+              noSpeechTimeoutMs: 1500,
+              initialNoiseFloor: mic.current.getNoiseFloor() || undefined,
+            },
+            (l) => setLevel(l),
+          );
+        } catch {
+          probe = null;
+        }
+        setLevel(0);
+        if (cancelledRef.current) return;
+
+        const heard = !!probe && probe.blob.size >= MIN_SPEECH_BLOB_BYTES;
+        if (heard) {
+          let t = "";
+          try {
+            t = await nova().transcribe(
+              {
+                audioBase64: await blobToBase64(probe!.blob),
+                mimeType: probe!.blob.type || "audio/webm",
+                googleSttQuality: prefs.current.googleSttQuality,
+              },
+              prefs.current.sttProvider,
+            );
+          } catch {
+            t = "";
+          }
+          const s = sanitizeTranscript(t);
+          if (s && isVoiceStopPhrase(s)) {
+            bargeCommitted = true;
+            nova().chatCancel(id);
+            cue("gotIt");
+            dispatch({ type: "dismiss" });
+            nova().orbDisarmAutoHide();
+            endTurn();
+            return;
+          }
+          if (s) {
+            // A real interruption — abandon this reply and start a new one.
+            bargeCommitted = true;
+            nova().chatCancel(id);
+            startReply(s, stream);
+            return;
+          }
+          // Heard only noise → fall through to resume.
+        }
+
+        // False barge-in: resume the reply we were already giving.
+        nova().chatCancel(id);
+        const remaining = replyText.trim();
+        if (!remaining || !prefs.current.spokenReplies) {
+          finishTurn();
+          return;
+        }
+        dispatch({ type: "responseStart" });
+        const resume = player.current.playStreaming(ttsOptions());
+        resume.feed(remaining);
+        void resume.finish().then(() => finishTurn());
       }
 
       let firstDelta = true;
@@ -534,8 +620,9 @@ export function useVoice(): {
           cue("reply"); // soft blip as the reply actually starts (thinking → speaking)
           dispatch({ type: "responseStart" }); // purple → green only now
         }
+        replyText += p.delta;
         dispatch({ type: "responseDelta", delta: p.delta });
-        speaker?.feed(p.delta);
+        currentSpeaker?.feed(p.delta);
       });
 
       const offTool = nova().onChatToolUse?.((p) => {
@@ -545,33 +632,17 @@ export function useVoice(): {
 
       const offDone = nova().onChatDone((p) => {
         if (p.requestId !== id) return;
-        // Remove IPC listeners but intentionally keep the barge listener running:
-        // TTS is still playing via speaker.finish() and the user should still be
-        // able to interrupt. Barge is stopped after finish() resolves (or if barge
-        // already fired, the guard below prevents double-completion).
+        // Remove IPC listeners but keep the barge listener running: TTS is
+        // still playing via finish() and the user may still interrupt.
         cleanupListeners();
-        if (speaker) {
-          void speaker.finish().then(() => {
-            barge.stop();
-            if (!bargeInFired) {
-              dispatch({ type: "settle" });
-              if (prefs.current.interactionMode === "conversation") {
-                void runTurn();
-              } else {
-                endTurn();
-              }
-            }
+        if (currentSpeaker) {
+          void currentSpeaker.finish().then(() => {
+            barge?.stop();
+            if (!bargeCommitted) finishTurn();
           });
         } else {
-          barge.stop();
-          if (!bargeInFired) {
-            dispatch({ type: "settle" });
-            if (prefs.current.interactionMode === "conversation") {
-              void runTurn();
-            } else {
-              endTurn();
-            }
-          }
+          barge?.stop();
+          if (!bargeCommitted) finishTurn();
         }
       });
 
@@ -592,10 +663,11 @@ export function useVoice(): {
 
       function cleanup() {
         cleanupListeners();
-        barge.stop();
+        barge?.stop();
       }
 
       cleanupTurn.current = cleanup;
+      armBarge();
 
       nova().chatSend({
         requestId: id,
