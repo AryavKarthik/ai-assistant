@@ -537,15 +537,21 @@ export function useVoice(): {
         else endTurn();
       }
 
+      // Interrupt handling. Deterministic and never stuck: an interrupt stops
+      // the reply and listens briefly; a real follow-up starts a new turn,
+      // anything else (silence, noise, a kill word) ends the turn cleanly back
+      // to idle. (A previous version tried to "resume" the paused reply, but
+      // the orb reducer can't go bargeIn→responding, so it froze orange.)
       async function onBarge() {
         if (bargeCommitted) return;
+        bargeCommitted = true;
         barge?.stop();
         cleanupListeners();
         player.current.stop();
+        nova().chatCancel(id);
         cue("bargeIn");
         dispatch({ type: "bargeIn" });
 
-        // Probe: is the user actually talking, or was this a false trigger?
         let probe: RecordResult | null = null;
         try {
           probe = await recordUntilSilence(
@@ -562,54 +568,41 @@ export function useVoice(): {
           probe = null;
         }
         setLevel(0);
-        if (cancelledRef.current) return;
+        if (cancelledRef.current) {
+          dispatch({ type: "dismiss" });
+          return;
+        }
 
-        const heard = !!probe && probe.blob.size >= MIN_SPEECH_BLOB_BYTES;
-        if (heard) {
-          let t = "";
+        let s = "";
+        if (probe && probe.blob.size >= MIN_SPEECH_BLOB_BYTES) {
           try {
-            t = await nova().transcribe(
+            const t = await nova().transcribe(
               {
-                audioBase64: await blobToBase64(probe!.blob),
-                mimeType: probe!.blob.type || "audio/webm",
+                audioBase64: await blobToBase64(probe.blob),
+                mimeType: probe.blob.type || "audio/webm",
                 googleSttQuality: prefs.current.googleSttQuality,
               },
               prefs.current.sttProvider,
             );
+            s = sanitizeTranscript(t);
           } catch {
-            t = "";
+            s = "";
           }
-          const s = sanitizeTranscript(t);
-          if (s && isVoiceStopPhrase(s)) {
-            bargeCommitted = true;
-            nova().chatCancel(id);
-            cue("gotIt");
-            dispatch({ type: "dismiss" });
-            nova().orbDisarmAutoHide();
-            endTurn();
-            return;
-          }
-          if (s) {
-            // A real interruption — abandon this reply and start a new one.
-            bargeCommitted = true;
-            nova().chatCancel(id);
-            startReply(s, stream);
-            return;
-          }
-          // Heard only noise → fall through to resume.
         }
 
-        // False barge-in: resume the reply we were already giving.
-        nova().chatCancel(id);
-        const remaining = replyText.trim();
-        if (!remaining || !prefs.current.spokenReplies) {
-          finishTurn();
+        if (s && !isVoiceStopPhrase(s)) {
+          // Real interruption — dispatch stays orange until submit flips it to
+          // processing inside startReply.
+          startReply(s, stream);
           return;
         }
-        dispatch({ type: "responseStart" });
-        const resume = player.current.playStreaming(ttsOptions());
-        resume.feed(remaining);
-        void resume.finish().then(() => finishTurn());
+        // Silence, noise, or a kill word → conversation's over. Go idle.
+        if (s && isVoiceStopPhrase(s)) {
+          cue("gotIt");
+          nova().orbDisarmAutoHide();
+        }
+        dispatch({ type: "dismiss" });
+        endTurn();
       }
 
       let firstDelta = true;
