@@ -478,6 +478,74 @@ export const TOOL_DEFINITIONS: Tool[] = [
       required: ["url"],
     },
   },
+  // ─── Browser control (Google Chrome) ─────────────────────────────────────────
+  {
+    name: "list_browser_tabs",
+    description:
+      "List every open tab in Google Chrome with its title, URL, and which one is active. Use to answer 'what do I have open', to find a tab before switching/closing it, or before reading a specific page.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "open_browser_tab",
+    description:
+      "Open a URL in a new Google Chrome tab (launches Chrome if needed) and bring it to the front. Prefer this over open_url when the user is working in Chrome or you'll act on the page next.",
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "Full http(s) URL" },
+      },
+      required: ["url"],
+    },
+  },
+  {
+    name: "activate_browser_tab",
+    description:
+      "Switch Google Chrome to a specific tab and focus it. Get tab_index (and window_index) from list_browser_tabs first.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tab_index: { type: "integer", description: "1-based tab index from list_browser_tabs" },
+        window_index: { type: "integer", description: "1-based window index (default 1)" },
+      },
+      required: ["tab_index"],
+    },
+  },
+  {
+    name: "close_browser_tab",
+    description:
+      "Close a specific Google Chrome tab. Get tab_index (and window_index) from list_browser_tabs first. Confirm with the user before closing tabs that may contain unsaved work.",
+    input_schema: {
+      type: "object",
+      properties: {
+        tab_index: { type: "integer", description: "1-based tab index from list_browser_tabs" },
+        window_index: { type: "integer", description: "1-based window index (default 1)" },
+      },
+      required: ["tab_index"],
+    },
+  },
+  {
+    name: "read_browser_page",
+    description:
+      "Read the visible text of the active Google Chrome tab (its title, URL, and innerText). Use for 'summarize this page/tab', 'what does this article say', or to extract info the user is looking at. Requires Chrome's 'Allow JavaScript from Apple Events' setting.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "run_browser_js",
+    description:
+      "Execute JavaScript in the active Google Chrome tab and return the result as a string. Use for agentic web tasks: click buttons (element.click()), fill inputs, extract structured data (querySelectorAll), scroll, or read page state. The last expression's value is returned. Requires Chrome's 'Allow JavaScript from Apple Events' setting.",
+    input_schema: {
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          description:
+            "JavaScript to run in the page. Can be multiple statements; use 'return' for the value, e.g. return document.querySelectorAll('a').length",
+        },
+      },
+      required: ["code"],
+    },
+  },
+  // ─── Mac automation (full power) ─────────────────────────────────────────────
   {
     name: "run_applescript",
     description:
@@ -525,6 +593,94 @@ export const TOOL_DEFINITIONS: Tool[] = [
         display: {
           type: "integer",
           description: "Which display to capture (1 = main, default). Only set for multi-monitor.",
+        },
+      },
+    },
+  },
+  {
+    name: "run_shell_command",
+    description:
+      "Run an arbitrary shell command (zsh) on this Mac and return stdout/stderr plus the exit code. Use for file operations, git, launching CLIs, reading system info, or anything the curated tools don't cover. Explain what you're about to do before running anything destructive (rm, overwriting files, etc.).",
+    input_schema: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "The shell command to run" },
+      },
+      required: ["command"],
+    },
+  },
+  {
+    name: "search_files",
+    description:
+      "Find files and folders on this Mac by name or content using Spotlight (mdfind). Use for 'find my resume', 'where is that PDF', 'locate the photos folder'. Returns matching paths; open one with open_path.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Search text — matched against file names and content" },
+        kind: {
+          type: "string",
+          enum: ["pdf", "image", "video", "audio", "document", "folder", "app"],
+          description: "Optional filter by file kind",
+        },
+        limit: { type: "integer", description: "Max results (default 20, max 100)" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "open_path",
+    description:
+      "Open a file, folder, or app by its filesystem path using the default handler (like double-clicking in Finder). Use after search_files to open a result.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute filesystem path" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "open_settings",
+    description:
+      "Open a specific pane of macOS System Settings. Use for 'open wifi settings', 'take me to display settings', 'open bluetooth'. Pass the pane name; unknown names open System Settings at its root.",
+    input_schema: {
+      type: "object",
+      properties: {
+        pane: {
+          type: "string",
+          description:
+            "Pane name, e.g. wifi, bluetooth, network, displays, sound, notifications, battery, keyboard, trackpad, privacy, accessibility, appearance, storage, focus, wallpaper, software_update",
+        },
+      },
+      required: ["pane"],
+    },
+  },
+  {
+    name: "get_clipboard",
+    description: "Read the current text contents of the Mac clipboard.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "set_clipboard",
+    description: "Replace the Mac clipboard with the given text so the user can paste it.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "Text to copy to the clipboard" },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "take_screenshot",
+    description:
+      "Capture a screenshot of this Mac to a PNG file and return its path. Set interactive=true to let the user select a region or window; otherwise the full screen is captured silently.",
+    input_schema: {
+      type: "object",
+      properties: {
+        interactive: {
+          type: "boolean",
+          description: "If true, user picks a region/window; default false (full screen)",
         },
       },
     },
