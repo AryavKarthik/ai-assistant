@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getToolDefinitions, MAC_ONLY_TOOLS, TOOL_DEFINITIONS } from "./definitions";
+import { getToolDefinitions, TOOL_DEFINITIONS } from "./definitions";
+import { currentPlatform } from "../platform/index";
+import { macPlatform } from "../platform/mac";
+import { MAC_ONLY_TOOLS, windowsPlatform } from "../platform/windows";
 
 const realPlatform = process.platform;
 
@@ -8,6 +11,17 @@ function setPlatform(platform: string) {
 }
 
 afterEach(() => setPlatform(realPlatform));
+
+describe("currentPlatform", () => {
+  it("resolves the adapter per call from process.platform", () => {
+    setPlatform("darwin");
+    expect(currentPlatform()).toBe(macPlatform);
+    setPlatform("win32");
+    expect(currentPlatform()).toBe(windowsPlatform);
+    setPlatform("linux");
+    expect(currentPlatform()).toBe(windowsPlatform); // conservative fallback
+  });
+});
 
 describe("getToolDefinitions platform gating", () => {
   it("every MAC_ONLY_TOOLS name exists in TOOL_DEFINITIONS (no stale entries)", () => {

@@ -483,34 +483,49 @@ produces near-zero scores rather than an error, so the exact contract matters:
 - Models live in `electron/wakeword/models/` (fetch with `npm run wake:models`) and are bundled
   for production via `extraResources` → `wakeword-models` in `electron-builder.json`.
 
-## Platform gating (Windows Phase 1)
+## Platform layer (`electron/platform/` — Windows Phase 1)
 
 The app boots and runs its core (voice, chat, memory, connections, proactive, tray/orb) on
-Windows; the macOS automation layer is gated, not ported. The contract:
+Windows; the macOS automation layer is gated, not ported. ALL per-OS behavior lives behind
+the `PlatformAdapter` interface in `electron/platform/index.ts` — **`mac.ts` holds every
+macOS-specific behavior, `windows.ts` every Windows behavior** (and doubles as the Linux
+fallback). Don't scatter new `process.platform` checks around the codebase: add a field to
+the adapter instead. Two hard rules, both load-bearing:
 
-- **Tools**: `MAC_ONLY_TOOLS` in `electron/tools/definitions.ts` lists every
-  AppleScript/mdfind/screencapture-backed tool; `getToolDefinitions()` filters them out
-  off-darwin (same pattern as the Composio gate — and the same rule applies: never use raw
-  `TOOL_DEFINITIONS`). Covered by `definitions.test.ts`. When Phase 2 adds win32
-  implementations, remove names from the set rather than adding parallel tools.
-- **System prompt**: `system-prompt.ts` bakes `PLATFORM_CONTROL_BLOCK` (mac automation
-  guidance vs. a Windows block that names what ISN'T available) into `BASE_SYSTEM_PROMPT` at
-  module load — platform is constant per process, so prompt caching is unaffected.
-- **Deep links**: macOS delivers via `open-url`; Windows/Linux relaunch the exe with the URL
-  in argv — `requestSingleInstanceLock()` + the `second-instance` handler in `main.ts` forward
-  it to the shared `routeDeepLink()`. Don't add deep-link handling anywhere else.
-- **Orb position persistence**: Electron's `moved` (drag finished) is macOS-only. Off-darwin,
-  the `move` handler synthesizes it — 400ms of stillness after the last non-programmatic
-  `move` runs the same `persistUserOrbPosition()`.
-- **Windows**: `vibrancy`/`hiddenInset` are darwin-only options in `createAppWindow`
-  (win32 gets `backgroundMaterial: "acrylic"`); `setVisibleOnAllWorkspaces` is darwin-guarded;
-  the `"screen-saver"` always-on-top level arg is ignored on Windows (plain topmost applies);
-  tray template-image tinting is darwin-only (win32 resizes the PNG to 16×16).
-- **Renderer**: `window.nova.platform` (static, exposed in `preload.ts`) drives per-OS copy —
-  the Settings hotkey chip and the mic-permission error wording.
-- **Shell tool**: `run_shell_command` uses zsh on darwin, Node's default (cmd.exe) elsewhere.
-- Packaging: `npm run dist:win` → NSIS (unsigned in Phase 1; SmartScreen warning expected).
-  `asarUnpack`/wake-model `extraResources` apply to both platforms unchanged.
+1. These modules are imported by vitest-loaded code (`definitions.ts`, `system-prompt.ts`,
+   `mac-control.ts`), so **no top-level `electron` value imports** — type-only imports,
+   instance parameters, or lazy `await import("electron")` inside functions.
+2. Consumers resolve the adapter **per call** via `currentPlatform()`, never snapshotting it
+   at module load — tests stub `process.platform` at runtime (`system-prompt.ts` is the one
+   sanctioned load-time consumer, for prompt-cache stability).
+
+What the adapter covers (and where it's consumed):
+
+- **Tools**: `unavailableTools` (`MAC_ONLY_TOOLS` in `windows.ts`) — every AppleScript/
+  mdfind/screencapture-backed tool, filtered by `getToolDefinitions()` (which remains the
+  only sanctioned tool list — never raw `TOOL_DEFINITIONS`). Covered by
+  `definitions.test.ts`. Phase 2: implement a tool on win32 → remove its name from the set.
+- **System prompt**: `controlPromptBlock` (mac automation guidance vs. a Windows block that
+  names what ISN'T available; shared lines in `platform/shared-prompt.ts`) baked into
+  `BASE_SYSTEM_PROMPT` at module load.
+- **Mic permission**: `ensureMicPermission()` — macOS TCC prompt at launch (denied → pointer
+  notification); no-op on Windows (Settings toggle, surfaced by the renderer's error path).
+- **Windows chrome**: `appWindowOptions()` (vibrancy+hiddenInset vs Win11 acrylic) and
+  `setupOrbWindow()` (Spaces visibility) in `window.ts`; `prepareTrayIcon()` (template
+  tinting vs 16×16 resize) in `tray.ts`. The `"screen-saver"` always-on-top level arg is
+  ignored on Windows (plain topmost applies — fine).
+- **Orb position persistence**: `hasNativeMovedEvent` — Electron's `moved` (drag finished) is
+  macOS-only; without it, `main.ts` synthesizes it from 400ms of stillness after the last
+  non-programmatic `move`, running the same `persistUserOrbPosition()`.
+- **Shell tool**: `shellForCommands` — zsh on darwin, Node's default (cmd.exe) elsewhere.
+
+Outside the adapter: deep links (macOS `open-url`; Windows/Linux relaunch the exe with the
+URL in argv — `requestSingleInstanceLock()` + the `second-instance` handler in `main.ts`
+forward to the shared `routeDeepLink()`; don't add deep-link handling anywhere else) and the
+renderer's `window.nova.platform` (static, from `preload.ts` — drives the Settings hotkey
+chip and mic-error wording). Packaging: `npm run dist:win` → NSIS (unsigned in Phase 1;
+SmartScreen warning expected). `asarUnpack`/wake-model `extraResources` apply to both
+platforms unchanged.
 
 ## macOS permissions
 

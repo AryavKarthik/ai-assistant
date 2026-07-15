@@ -1,5 +1,6 @@
 import { BrowserWindow, screen, shell } from "electron";
 import { join } from "node:path";
+import { currentPlatform } from "./platform/index";
 
 /** Route link clicks to the default browser instead of the window itself.
  *  Without BOTH handlers, an anchor in a reply (e.g. a YouTube link) either
@@ -100,10 +101,8 @@ export function createOrbWindow(): BrowserWindow {
       backgroundThrottling: false,
     },
   });
-  // macOS Spaces concept; documented no-op elsewhere but guard explicitly.
-  if (process.platform === "darwin") {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  }
+  // Per-OS orb behavior (macOS: visible across Spaces/full-screen).
+  currentPlatform().setupOrbWindow(win);
   // Float above full-screen apps like Siri does. The "screen-saver" level is
   // macOS/Linux z-ordering; on Windows the level argument is ignored and
   // plain always-on-top applies, which is the right behavior there.
@@ -145,16 +144,9 @@ export function createAppWindow(): BrowserWindow {
     frame: true,
     transparent: false,
     backgroundColor: "#080808",
-    // Chrome differs per OS: macOS gets vibrancy + the inset traffic-light
-    // title bar the AppShell's 28px drag inset is designed around; Windows
-    // keeps a standard frame (the inset just reads as padding) and gets
-    // Win11 acrylic for a similar translucency — silently ignored on Win10,
-    // which falls back to the solid backgroundColor above.
-    ...(process.platform === "darwin"
-      ? { vibrancy: "under-window" as const, titleBarStyle: "hiddenInset" as const }
-      : process.platform === "win32"
-        ? { backgroundMaterial: "acrylic" as const }
-        : {}),
+    // Per-OS chrome (macOS vibrancy + hiddenInset vs Win11 acrylic) comes
+    // from the platform adapter — see electron/platform/.
+    ...currentPlatform().appWindowOptions(),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/preload.js"),
       nodeIntegration: false,

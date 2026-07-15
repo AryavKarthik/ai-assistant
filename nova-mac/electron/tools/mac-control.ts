@@ -1,6 +1,7 @@
 import { exec, execFile } from "node:child_process";
 import { cp, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, normalize } from "node:path";
+import { currentPlatform } from "../platform/index";
 
 function run(cmd: string, args: string[], timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -450,8 +451,7 @@ export async function runShellCommand(
       {
         timeout: timeoutMs,
         maxBuffer: 8 * 1024 * 1024,
-        // zsh on macOS; undefined = Node's default (cmd.exe) on Windows.
-        shell: process.platform === "darwin" ? "/bin/zsh" : undefined,
+        shell: currentPlatform().shellForCommands,
       },
       (err, stdout, stderr) => {
         const merged = [stdout, stderr].filter(Boolean).join("\n").trim();

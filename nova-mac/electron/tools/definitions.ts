@@ -1,4 +1,5 @@
 import type { Tool } from "@anthropic-ai/sdk/resources/messages";
+import { currentPlatform } from "../platform/index";
 
 // Tool schemas Claude sees — add new tools here.
 export const TOOL_DEFINITIONS: Tool[] = [
@@ -994,46 +995,19 @@ export const TOOL_DEFINITIONS: Tool[] = [
   },
 ];
 
-/** Tools whose implementations are macOS-only (AppleScript/osascript, macOS
- *  Shortcuts, Spotlight/mdfind, screencapture, System Settings URLs, macOS
- *  TCC permission checks). Hidden from Claude on other platforms so the model
- *  never reaches for automation that can only error — the Phase-2 Windows
- *  port will supply win32 implementations behind these same names. */
-export const MAC_ONLY_TOOLS: ReadonlySet<string> = new Set([
-  "run_applescript",
-  "run_shortcut",
-  "list_shortcuts",
-  "check_mac_permissions",
-  "open_app",
-  "quit_app",
-  "set_system_volume",
-  "get_system_volume",
-  "set_screen_brightness",
-  "control_media",
-  "see_screen",
-  "take_screenshot",
-  "open_settings",
-  "search_files",
-  "list_browser_tabs",
-  "open_browser_tab",
-  "activate_browser_tab",
-  "close_browser_tab",
-  "organize_browser_tabs",
-  "read_browser_page",
-  "run_browser_js",
-]);
-
 /** Tool list actually offered to Claude: Composio meta-tools are hidden until
  *  COMPOSIO_API_KEY is configured (so the model never wanders into a bridge
- *  that can only error), and macOS-only automation is hidden off-darwin.
- *  Always use THIS, never raw TOOL_DEFINITIONS. */
+ *  that can only error), and tools with no implementation on the running OS
+ *  are hidden via the platform adapter (electron/platform/ — MAC_ONLY_TOOLS
+ *  lives in windows.ts). Always use THIS, never raw TOOL_DEFINITIONS. */
 export function getToolDefinitions(): Tool[] {
   let tools: Tool[] = TOOL_DEFINITIONS;
   if (!process.env.COMPOSIO_API_KEY?.trim()) {
     tools = tools.filter((t) => !t.name.startsWith("composio_"));
   }
-  if (process.platform !== "darwin") {
-    tools = tools.filter((t) => !MAC_ONLY_TOOLS.has(t.name));
+  const unavailable = currentPlatform().unavailableTools;
+  if (unavailable.size > 0) {
+    tools = tools.filter((t) => !unavailable.has(t.name));
   }
   return tools;
 }

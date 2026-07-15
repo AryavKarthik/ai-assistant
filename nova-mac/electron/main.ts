@@ -5,7 +5,8 @@ import { config as loadEnv } from "dotenv";
 // .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
 loadEnv({ path: [".env.local", ".env"] });
 
-import { app, BrowserWindow, globalShortcut, ipcMain, Notification, systemPreferences, dialog } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Notification, dialog } from "electron";
+import { currentPlatform } from "./platform/index";
 import { join, resolve } from "node:path";
 import {
   createOrbWindow,
@@ -163,27 +164,10 @@ app.on("open-url", (event, url) => {
 });
 
 app.whenReady().then(async () => {
-  // Microphone TCC, up front and deterministic. Before this, nothing ever
-  // asked macOS for mic access from the main process: the first getUserMedia
-  // in the renderer raced the OS prompt, and a previously-denied state made
-  // wake capture silently receive nothing — no error anywhere, the wake word
-  // just "didn't work". Ask once at launch; if the user has denied it,
-  // askForMediaAccess resolves false without prompting, so tell them where
-  // to fix it instead of failing silently.
-  if (process.platform === "darwin") {
-    const micStatus = systemPreferences.getMediaAccessStatus("microphone");
-    if (micStatus !== "granted") {
-      const granted = await systemPreferences
-        .askForMediaAccess("microphone")
-        .catch(() => false);
-      if (!granted && Notification.isSupported()) {
-        new Notification({
-          title: "Nova can't hear you",
-          body: "Enable Nova in System Settings → Privacy & Security → Microphone, then relaunch.",
-        }).show();
-      }
-    }
-  }
+  // Mic permission up front and deterministic (macOS TCC prompt; no-op on
+  // Windows where it's a Settings toggle) — without this the renderer's first
+  // getUserMedia raced the OS prompt and a prior denial failed silently.
+  await currentPlatform().ensureMicPermission();
 
   // Learned personality traits live in userData; the store gets the dir
   // injected (it can't read electron's `app` itself — vitest loads it in
@@ -599,7 +583,7 @@ app.whenReady().then(async () => {
       });
     }
     lastMove = { x, y, t: now };
-    if (process.platform !== "darwin") {
+    if (!currentPlatform().hasNativeMovedEvent) {
       if (movedFallbackTimer) clearTimeout(movedFallbackTimer);
       movedFallbackTimer = setTimeout(() => {
         movedFallbackTimer = null;
