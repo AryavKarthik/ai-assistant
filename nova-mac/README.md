@@ -6,7 +6,7 @@ Shares the same Supabase backend (auth, conversations, memories, preferences) as
 
 ## What it does
 
-- **Voice orb** — always-on-top canvas orb; wake word ("Hey Jarvis"), barge-in, earcon, continuous conversation mode
+- **Voice orb** — always-on-top canvas orb; wake word ("Hey Jarvis"), barge-in, earcon, continuous conversation mode. The conversation stays open turn-to-turn and ends when you fall silent or say a dismissal — strong kill phrases ("that will be all", "stop listening", "goodbye", …) work anywhere in a sentence ("thanks Jarvis, that'll be all for today"), softer ones ("that's enough", "I'm done") when the sentence ends with them. Plain "stop"/"cancel" only dismiss on their own, so "stop the timer" still works as a command.
 - **Full app window** — Settings, Reminders, Memory, and Connections tabs
 - **Memory-aware chat** — conversation history, hybrid memory retrieval (pgvector + pg_trgm), tool use (calendar, Gmail, reminders)
 - **Google integrations** — Calendar, Gmail, YouTube taste profile via OAuth deep-link (`nova://connections-callback`)
@@ -60,6 +60,10 @@ OPENAI_STT_MODEL=              # default: gpt-4o-transcribe
 
 With the GCP service account configured, Nova transcribes **while you speak** (Speech-to-Text V1 `streamingRecognize` fed by the same 16 kHz PCM frames the wake-word engine uses), so the reply starts a few hundred ms after you stop talking instead of after a full upload round-trip. If the stream fails or GCP isn't configured, the recorded audio falls back to the batch STT provider selected in Settings.
 
+## macOS permissions
+
+Nova asks for **Microphone** access once at launch (required for the wake word and voice turns). If you denied it earlier, nothing will prompt again — enable Nova manually in System Settings → Privacy & Security → Microphone and relaunch. When the mic is unavailable the orb shows an error and retries for a short while instead of failing silently. Packaged builds ship the required Info.plist usage descriptions and entitlements automatically (`npm run dist`).
+
 ## Mac automation
 
 Beyond volume/brightness/app-launching, the assistant can drive apps and browsers via `run_applescript` (AppleScript incl. System Events UI scripting) and `run_shortcut` (macOS Shortcuts). First use will trigger macOS permission prompts:
@@ -73,6 +77,17 @@ Beyond volume/brightness/app-launching, the assistant can drive apps and browser
 2. Put it in `.env.local` as `COMPOSIO_API_KEY=...` and restart Nova.
 3. In the Composio dashboard, go to **Apps** → pick *Google Docs* (or Notion, Slack, ...) → **Connect account** and complete the OAuth flow. Leave the entity/user id as `default` (or set `COMPOSIO_USER_ID` to match a custom one).
 4. That's it — ask Nova e.g. *"create a Google Doc called Meeting notes and add today's agenda"*. The assistant discovers actions with `composio_search_tools` and runs them with `composio_execute`.
+
+## Windows support (Phase 1)
+
+The core assistant runs on Windows: wake word, voice turns (STT/TTS/streaming), chat + memory, reminders, timers, proactive announcements, Google connections, Composio, and the tray/orb UI. **Not yet available on Windows** (macOS-only automation, pending a Phase-2 port): AppleScript/Shortcuts, app launching/quitting, volume/brightness control, media transport, screen capture (`see_screen`/`take_screenshot`), Spotlight file search, System Settings panes, and Chrome tab control — these tools are automatically hidden from the assistant on Windows so it says so instead of failing.
+
+- Build: `npm run dist:win` (NSIS installer). Unsigned Phase-1 builds trigger a SmartScreen warning — "More info → Run anyway".
+- Microphone: allow it under Windows Settings → Privacy & security → Microphone (plus "Let desktop apps access your microphone").
+- Deep links (`nova://` magic-link / OAuth) are delivered through the single-instance relaunch mechanism; if a login link doesn't land in dev, use the paste-callback fallback on the sign-in screen.
+- Win11 renders the app window with acrylic translucency; Win10 falls back to the solid dark background.
+
+Smoke-test checklist after installing on Windows: app appears in the system tray → `Ctrl+Shift+Space` shows the orb → mic permission granted → "Hey Jarvis" fires → a voice turn completes end-to-end → links in replies open in the browser → dragging the orb persists its spot across restart → collapsed orb doesn't block clicks on windows beneath it → clicking a `nova://auth-callback` link reaches the running app.
 
 ## Build & distribute (macOS)
 

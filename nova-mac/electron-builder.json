@@ -12,6 +12,18 @@
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
     "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSMicrophoneUsageDescription": "Nova listens for the wake word and records your voice commands.",
+      "NSAppleEventsUsageDescription": "Nova automates apps with AppleScript when you ask it to.",
+      "NSSpeechRecognitionUsageDescription": "Nova transcribes your voice commands."
+    },
     "notarize": true
+  },
+  "win": {
+    "target": ["nsis"]
+  },
+  "nsis": {
+    "oneClick": true,
+    "deleteAppDataOnUninstall": false
   }
 }

@@ -103,6 +103,11 @@ row spans) does not "win" the click just because it's on top in the DOM/paint or
 does not. This broke click-to-collapse once (orb painted over the header row, clicks fell into
 the OS drag session instead of the orb) — the fix is shrinking the drag element's own box so it
 never geometrically overlaps the orb's box, not relying on stacking order.
+Both manual drag handlers carry a **phantom-drag guard** (`e.buttons === 0` → clear the drag
+ref, plus `onLostPointerCapture`): if a pointerup is ever lost (window hidden mid-drag, hotkey,
+Mission Control), the drag ref survived the release, and every subsequent *hover* over the orb
+moved the window by the cursor's delta — the orb visibly chasing/"running away from" the cursor
+until the next click. No buttons down can never be a drag.
 `main.ts` listens for the window's native `moved` event to detect *real* user drags —
 `orbMoveIsProgrammatic` + `moveOrbProgrammatically()` suppress the `moved` events our own
 `positionOrbTopRight`/`setPosition` calls trigger, since Electron fires `moved`
@@ -133,6 +138,13 @@ only a timer notice auto-expands (`hasNotice` effect in `src/App.tsx`), collapsi
 ~2.5s after the notice clears. The reducer's `settle` event ends a turn while keeping the
 conversation text visible in the panel; typed messages go through `useVoice().sendText` (no
 TTS, no barge-in) so replies stream in even when opened manually.
+
+**Links in replies**: reply text in the orb panel is rendered through `linkifyText`
+(`src/lib/linkify.tsx`) so URLs are clickable, and `openLinksExternally` in `window.ts`
+(both windows) routes `window.open`/`will-navigate` to `shell.openExternal`. Both halves are
+required: without the main-side handlers an anchor click navigates the Electron window itself
+away from the app, and without linkify a URL in a reply (e.g. a YouTube link) is dead plain
+text — each reads as "the link doesn't work".
 
 ## The IPC contract (single source of truth)
 
@@ -215,12 +227,31 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   tick, and React 18 batches both into one render, so resetting to `"listening"` here would
   make the orange barge-in color never actually paint. `submit` accepts both `"listening"` and
   `"bargeIn"` so the follow-up utterance after an interrupt still reaches `"processing"`.
+- **Barge-in probe MUST use the sttRing pre-roll** (`onBarge` in `useVoice.ts` opens a
+  streaming STT session and flushes the ring before listening, same as a main turn). This is
+  not a latency optimization: the barge listener needs ~250-380ms of *sustained* speech before
+  it fires, so a short kill word ("stop", "that's all") is usually already finished when the
+  probe's recorder starts. Batch-only probing heard silence, judged the interrupt a false
+  alarm, and RESUMED the reply + re-listened — "keeps listening/talking after I said stop".
+  The ring (12 × 80ms ≈ 1s of native-rate PCM, sized to cover listener hold + stream-start
+  latency) is the only place the interrupting utterance still exists. The resume path also
+  re-arms the barge listener (resetting `bargeCommitted`, with `finishTurn` guarded on it) so
+  an interrupt during the *resumed* playback is heard too, instead of falling dead until the
+  next listen window.
 - **Kill words / noise filtering** (`src/voice/stop-phrases.ts`, `transcript-filter.ts`,
   ported from the web app): every transcript from `recordUntilSilence` is run through
   `sanitizeTranscript()` in `useVoice.ts` before it ever reaches Claude. An empty result means
   STT hallucinated on background noise/silence — dropped silently, no sound, no chat call.
   `isVoiceStopPhrase()` catches dismissals ("stop", "that'll be all", "thank you very much",
   etc.) — acknowledged with the `gotIt` cue and the turn ends without calling Claude at all.
+  Matching is tiered (`stop-phrases.test.ts` covers all three): exact phrases with leading/
+  trailing-filler stripping; `CONTAINED_STOP_PHRASES` — dismissals unambiguous enough to end
+  the conversation when they appear *anywhere* in the sentence ("thanks Jarvis, that will be
+  all for today"), which exact-only matching used to miss entirely; and
+  `END_ANCHORED_STOP_PHRASES` — phrases like "that's enough" / "i'm done" that dismiss only at
+  the *end* of the utterance, because mid-sentence they're usually part of a real request
+  ("i'm done with the report so email it"). Bare "stop"/"cancel" stay exact-only on purpose —
+  contained matching would swallow commands like "stop the timer".
   This only stops *listening* (orb-machine `dismiss` → back to idle grey); it deliberately does
   NOT let a system-triggered popup auto-hide itself afterward the way a natural turn completion
   would (`nova().orbDisarmAutoHide()` → `IpcChannel.OrbDisarmAutoHide` in `main.ts` clears the
@@ -260,7 +291,15 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
 - **Recording**: `recordUntilSilence` gives up after `prefs.noSpeechTimeoutMs` (Settings →
   Conversation → "Give up after", default 5s) of no speech (empty blob → "Nothing heard"
   without an STT round-trip, and the turn ends outright rather than retrying); speech threshold
-  derives from `listeningSensitivity`. STT requests deliberately send **no** `prompt` hint to
+  derives from `listeningSensitivity`. Its `SpeechGate` gets
+  `confirmedDecayMs: silenceMs + 2000` — with the gate's default 2s decay, any `silenceMs`
+  ≥ 2000 cleared `confirmed` *before* the silence timer fired, and after that a single ambient
+  blip above threshold cleared the timer with nothing able to re-arm it (re-arming requires
+  `gate.confirmed`), so recording silently ran to the 30s hard cap instead of stopping after
+  the configured silence window. `consecutiveNoiseTurns` (the "quietly re-listen a couple of
+  times before ending the conversation" counter) is reset at the top of every fresh — non-
+  `followup` — `runTurn`: it used to survive the previous conversation's ending at its limit,
+  making the next wake activation dismiss itself on the first quiet moment. STT requests deliberately send **no** `prompt` hint to
   OpenAI (`electron/voice/stt.ts`) — an earlier "casual spoken commands and questions to a
   personal AI assistant" prompt biased the model's hallucinations on silence/background noise
   toward exactly that genre (fabricated "what's the weather" / "play music on Spotify" style
@@ -410,15 +449,28 @@ Google OAuth 2.0 client at console.cloud.google.com. Requires `GOOGLE_CLIENT_ID`
 Capture (renderer) → ONNX inference (main worker thread). Getting any step wrong silently
 produces near-zero scores rather than an error, so the exact contract matters:
 
-- `src/voice/wake-capture.ts`: an `AudioContext({sampleRate:16000})` resamples the mic and
-  emits **Int16, 16 kHz mono, 1280-sample (~80 ms) frames** (`SAMPLES_PER_FRAME` in
-  `shared/wake-constants.ts`) over `IpcChannel.WakeAudioFrame`.
+- `src/voice/wake-capture.ts`: an `AudioContext` at the mic's **native** rate feeds an
+  AudioWorklet that FIR-decimates to **Int16, 16 kHz mono, 1280-sample (~80 ms) frames**
+  (`SAMPLES_PER_FRAME` in `shared/wake-constants.ts`) over `IpcChannel.WakeAudioFrame`, and
+  tees full native-rate frames for streaming STT. (Forcing the whole context to 16 kHz and
+  letting Chromium resample audibly degraded the audio and halved genuine wake scores.)
+  Non-integer decimation (44.1 kHz hardware) or worklet failure falls back to a forced-16 kHz
+  ScriptProcessor, wake-only. Mic acquisition in `useVoice.boot()` retries with backoff and
+  surfaces an error pointing at System Settings → Microphone — it used to reject unhandled,
+  leaving wake capture silently never started ("wake word randomly doesn't work").
 - `electron/wakeword/index.ts` (`WakeWordController`, main thread): forwards frames to the
-  worker, applies a fire threshold (default `0.05`, mutable via `setThreshold` — main.ts derives
+  worker, applies a fire threshold (default `0.35`, mutable via `setThreshold` — main.ts derives
   it from `VoicePreferences.wakeWordSensitivity` via `wakeThresholdFromSensitivity` at startup
   and on every `PrefsSet`; this preference used to be saved from Settings but never actually
   read anywhere, so the slider had zero effect on real-world detection consistency), debounce,
   and an arm/re-arm gate; pauses during a voice turn and resumes on `voiceTurnEnded`.
+  **Resume must reset the engine's scoring state** (`resume()`/re-`setEnabled` post
+  `{type:"reset"}` → worker chains `engine.reset()` on its frame queue): the embedding window
+  spans ~1.3s and is never naturally flushed while frames are dropped, so on resume it still
+  held the "hey jarvis" that started the paused turn and the first predictions re-fired on
+  that stale phrase — the orb re-activating itself right after a kill word ended the turn.
+  The reset also acts as a built-in cooldown: no score exists until the window refills with
+  ~1.3s of genuinely new audio.
 - `electron/wakeword/worker.ts` + `engine.ts`: three-stage ONNX pipeline
   `melspectrogram.onnx → embedding_model.onnx → hey_jarvis_v0.1.onnx`. **Preprocessing the
   models were trained on (all four are required or scores flatline near 0):**
@@ -430,6 +482,58 @@ produces near-zero scores rather than an error, so the exact contract matters:
      16-embedding wake input spans ~1.3 s — not one embedding per frame.
 - Models live in `electron/wakeword/models/` (fetch with `npm run wake:models`) and are bundled
   for production via `extraResources` → `wakeword-models` in `electron-builder.json`.
+
+## Platform gating (Windows Phase 1)
+
+The app boots and runs its core (voice, chat, memory, connections, proactive, tray/orb) on
+Windows; the macOS automation layer is gated, not ported. The contract:
+
+- **Tools**: `MAC_ONLY_TOOLS` in `electron/tools/definitions.ts` lists every
+  AppleScript/mdfind/screencapture-backed tool; `getToolDefinitions()` filters them out
+  off-darwin (same pattern as the Composio gate — and the same rule applies: never use raw
+  `TOOL_DEFINITIONS`). Covered by `definitions.test.ts`. When Phase 2 adds win32
+  implementations, remove names from the set rather than adding parallel tools.
+- **System prompt**: `system-prompt.ts` bakes `PLATFORM_CONTROL_BLOCK` (mac automation
+  guidance vs. a Windows block that names what ISN'T available) into `BASE_SYSTEM_PROMPT` at
+  module load — platform is constant per process, so prompt caching is unaffected.
+- **Deep links**: macOS delivers via `open-url`; Windows/Linux relaunch the exe with the URL
+  in argv — `requestSingleInstanceLock()` + the `second-instance` handler in `main.ts` forward
+  it to the shared `routeDeepLink()`. Don't add deep-link handling anywhere else.
+- **Orb position persistence**: Electron's `moved` (drag finished) is macOS-only. Off-darwin,
+  the `move` handler synthesizes it — 400ms of stillness after the last non-programmatic
+  `move` runs the same `persistUserOrbPosition()`.
+- **Windows**: `vibrancy`/`hiddenInset` are darwin-only options in `createAppWindow`
+  (win32 gets `backgroundMaterial: "acrylic"`); `setVisibleOnAllWorkspaces` is darwin-guarded;
+  the `"screen-saver"` always-on-top level arg is ignored on Windows (plain topmost applies);
+  tray template-image tinting is darwin-only (win32 resizes the PNG to 16×16).
+- **Renderer**: `window.nova.platform` (static, exposed in `preload.ts`) drives per-OS copy —
+  the Settings hotkey chip and the mic-permission error wording.
+- **Shell tool**: `run_shell_command` uses zsh on darwin, Node's default (cmd.exe) elsewhere.
+- Packaging: `npm run dist:win` → NSIS (unsigned in Phase 1; SmartScreen warning expected).
+  `asarUnpack`/wake-model `extraResources` apply to both platforms unchanged.
+
+## macOS permissions
+
+Every layer below must be in place or mic access fails *silently* (dead stream, no error):
+
+- **TCC prompt** (`main.ts`, top of `whenReady`): `systemPreferences.askForMediaAccess("microphone")`
+  is called at launch when status isn't `granted`, so the OS prompt is deterministic instead of
+  racing the renderer's first `getUserMedia`. If the user previously denied it,
+  `askForMediaAccess` resolves `false` *without prompting* — a Notification then points them at
+  System Settings → Privacy & Security → Microphone.
+- **Session handlers** (`window.ts`, `createOrbWindow`): both a `setPermissionRequestHandler`
+  *and* a `setPermissionCheckHandler` granting `media` — sandboxed renderers consult the check
+  handler synchronously, and without it permission checks can report denied even though
+  requests succeed. Both windows share the default session, so registering once covers both.
+- **Info.plist usage descriptions** (`electron-builder.json` → `mac.extendInfo`):
+  `NSMicrophoneUsageDescription`, `NSAppleEventsUsageDescription`,
+  `NSSpeechRecognitionUsageDescription`. Packaged apps without these are denied (or killed)
+  by macOS on first TCC access — dev builds work because Electron.app carries its own.
+- **Entitlements** (`build/entitlements.mac.plist`): `com.apple.security.device.audio-input`
+  + `com.apple.security.automation.apple-events` for the hardened runtime.
+- **Accessibility / Automation** (AppleScript, brightness key fallback) are per-feature TCC
+  prompts on first use; `electron/tools/mac-control.ts` rewrites their opaque failures into
+  actionable "grant X in System Settings" tool errors.
 
 ## Packaging notes (`electron-builder.json`)
 

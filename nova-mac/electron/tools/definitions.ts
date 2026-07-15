@@ -478,21 +478,27 @@ export const TOOL_DEFINITIONS: Tool[] = [
       required: ["url"],
     },
   },
-  // ─── Browser control (Google Chrome) ─────────────────────────────────────────
+  // ─── Browser control (Google Chrome / Safari) ───────────────────────────────
   {
     name: "list_browser_tabs",
     description:
-      "List every open tab in Google Chrome with its title, URL, and which one is active. Use to answer 'what do I have open', to find a tab before switching/closing it, or before reading a specific page.",
-    input_schema: { type: "object", properties: {} },
+      "List every open tab in Chrome or Safari with its title, URL, and which one is active. Use to answer 'what do I have open', to find a tab before switching/closing it, or before reading a specific page.",
+    input_schema: {
+      type: "object",
+      properties: {
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
+      },
+    },
   },
   {
     name: "open_browser_tab",
     description:
-      "Open a URL in a new Google Chrome tab (launches Chrome if needed) and bring it to the front. Prefer this over open_url when the user is working in Chrome or you'll act on the page next.",
+      "Open a URL in a new Chrome or Safari tab (launches browser if needed) and bring it to the front. Prefer this over open_url when you'll act on the page next.",
     input_schema: {
       type: "object",
       properties: {
         url: { type: "string", description: "Full http(s) URL" },
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
       },
       required: ["url"],
     },
@@ -500,12 +506,13 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "activate_browser_tab",
     description:
-      "Switch Google Chrome to a specific tab and focus it. Get tab_index (and window_index) from list_browser_tabs first.",
+      "Switch Chrome or Safari to a specific tab and focus it. Get tab_index (and window_index) from list_browser_tabs first.",
     input_schema: {
       type: "object",
       properties: {
         tab_index: { type: "integer", description: "1-based tab index from list_browser_tabs" },
         window_index: { type: "integer", description: "1-based window index (default 1)" },
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
       },
       required: ["tab_index"],
     },
@@ -513,12 +520,13 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "close_browser_tab",
     description:
-      "Close a specific Google Chrome tab. Get tab_index (and window_index) from list_browser_tabs first. Confirm with the user before closing tabs that may contain unsaved work.",
+      "Close a specific Chrome or Safari tab. Get tab_index (and window_index) from list_browser_tabs first. Confirm with the user before closing tabs that may contain unsaved work.",
     input_schema: {
       type: "object",
       properties: {
         tab_index: { type: "integer", description: "1-based tab index from list_browser_tabs" },
         window_index: { type: "integer", description: "1-based window index (default 1)" },
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
       },
       required: ["tab_index"],
     },
@@ -526,13 +534,18 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "read_browser_page",
     description:
-      "Read the visible text of the active Google Chrome tab (its title, URL, and innerText). Use for 'summarize this page/tab', 'what does this article say', or to extract info the user is looking at. Requires Chrome's 'Allow JavaScript from Apple Events' setting.",
-    input_schema: { type: "object", properties: {} },
+      "Read the visible text of the active Chrome or Safari tab (title, URL, and innerText). Use for 'summarize this page/tab' or extracting what the user is viewing. May require 'Allow JavaScript from Apple Events' in browser developer menu.",
+    input_schema: {
+      type: "object",
+      properties: {
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
+      },
+    },
   },
   {
     name: "run_browser_js",
     description:
-      "Execute JavaScript in the active Google Chrome tab and return the result as a string. Use for agentic web tasks: click buttons (element.click()), fill inputs, extract structured data (querySelectorAll), scroll, or read page state. The last expression's value is returned. Requires Chrome's 'Allow JavaScript from Apple Events' setting.",
+      "Execute JavaScript in the active Chrome or Safari tab and return the result as a string. Use for web tasks: click buttons, fill inputs, extract data, scroll, or read page state. The last expression's value is returned. May require 'Allow JavaScript from Apple Events' in browser developer menu.",
     input_schema: {
       type: "object",
       properties: {
@@ -541,8 +554,30 @@ export const TOOL_DEFINITIONS: Tool[] = [
           description:
             "JavaScript to run in the page. Can be multiple statements; use 'return' for the value, e.g. return document.querySelectorAll('a').length",
         },
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
       },
       required: ["code"],
+    },
+  },
+  {
+    name: "organize_browser_tabs",
+    description:
+      "Reorganize tabs in a Chrome or Safari window by grouping similar pages together (domain/title). Use dry_run=true first when the user wants a preview before changes. This tool does not close tabs.",
+    input_schema: {
+      type: "object",
+      properties: {
+        browser: { type: "string", enum: ["chrome", "safari"], description: "Target browser (default chrome)" },
+        window_index: { type: "integer", description: "1-based browser window index (default 1)" },
+        mode: {
+          type: "string",
+          enum: ["domain", "title"],
+          description: "Sort strategy (default domain, fallback title)",
+        },
+        dry_run: {
+          type: "boolean",
+          description: "If true, return proposed ordering only without reordering tabs",
+        },
+      },
     },
   },
   // ─── Mac automation (full power) ─────────────────────────────────────────────
@@ -600,7 +635,7 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "run_shell_command",
     description:
-      "Run an arbitrary shell command (zsh) on this Mac and return stdout/stderr plus the exit code. Use for file operations, git, launching CLIs, reading system info, or anything the curated tools don't cover. Explain what you're about to do before running anything destructive (rm, overwriting files, etc.).",
+      "Run an arbitrary shell command (zsh on macOS, cmd on Windows) and return stdout/stderr plus the exit code. Use for file operations, git, launching CLIs, reading system info, or anything the curated tools don't cover. Explain what you're about to do before running anything destructive (rm/del, overwriting files, etc.).",
     input_schema: {
       type: "object",
       properties: {
@@ -637,6 +672,143 @@ export const TOOL_DEFINITIONS: Tool[] = [
         path: { type: "string", description: "Absolute filesystem path" },
       },
       required: ["path"],
+    },
+  },
+  {
+    name: "trash_file",
+    description:
+      "Move a file or folder to the macOS Trash (reversible), not permanent delete.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute filesystem path to move to Trash" },
+      },
+      required: ["path"],
+    },
+  },
+  {
+    name: "move_file",
+    description:
+      "Move or rename a file/folder to a new absolute destination path. Confirm with the user before moving important files. By default this will not overwrite an existing destination unless overwrite=true.",
+    input_schema: {
+      type: "object",
+      properties: {
+        source_path: { type: "string", description: "Absolute source path" },
+        destination_path: { type: "string", description: "Absolute destination path" },
+        overwrite: {
+          type: "boolean",
+          description: "Allow replacing an existing destination (default false)",
+        },
+      },
+      required: ["source_path", "destination_path"],
+    },
+  },
+  {
+    name: "rename_file",
+    description:
+      "Rename a file/folder in place by setting a new name. Confirm with the user before renaming important files. By default this will not overwrite an existing destination name unless overwrite=true.",
+    input_schema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute path to the existing file/folder" },
+        new_name: { type: "string", description: "New base name (no parent path)" },
+        overwrite: {
+          type: "boolean",
+          description: "Allow replacing an existing destination name (default false)",
+        },
+      },
+      required: ["path", "new_name"],
+    },
+  },
+  {
+    name: "create_custom_skill",
+    description:
+      "Create a reusable custom skill/macro that runs multiple actions from one phrase, e.g. 'open chemistry tuition'.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Human-friendly skill name" },
+        triggers: {
+          type: "array",
+          items: { type: "string" },
+          description: "Phrases that should trigger this skill",
+        },
+        actions: {
+          type: "array",
+          description: "Ordered actions to run",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["open_path", "open_app", "open_url", "run_shortcut"] },
+              path: { type: "string" },
+              app_name: { type: "string" },
+              url: { type: "string" },
+              name: { type: "string" },
+              input: { type: "string" },
+            },
+            required: ["type"],
+          },
+        },
+        enabled: { type: "boolean", description: "Whether the skill can run immediately (default true)" },
+      },
+      required: ["name", "triggers", "actions"],
+    },
+  },
+  {
+    name: "list_custom_skills",
+    description: "List all custom skills/macros configured on this Mac.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "update_custom_skill",
+    description: "Update an existing custom skill by id (name, triggers, actions, or enabled).",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Skill id from list_custom_skills" },
+        name: { type: "string" },
+        triggers: { type: "array", items: { type: "string" } },
+        actions: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              type: { type: "string", enum: ["open_path", "open_app", "open_url", "run_shortcut"] },
+              path: { type: "string" },
+              app_name: { type: "string" },
+              url: { type: "string" },
+              name: { type: "string" },
+              input: { type: "string" },
+            },
+            required: ["type"],
+          },
+        },
+        enabled: { type: "boolean" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "delete_custom_skill",
+    description: "Delete a custom skill by id.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Skill id from list_custom_skills" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "run_custom_skill",
+    description:
+      "Run a custom skill by id immediately. Use to test or execute a prepared workspace routine.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Skill id from list_custom_skills" },
+      },
+      required: ["id"],
     },
   },
   {
@@ -822,10 +994,46 @@ export const TOOL_DEFINITIONS: Tool[] = [
   },
 ];
 
+/** Tools whose implementations are macOS-only (AppleScript/osascript, macOS
+ *  Shortcuts, Spotlight/mdfind, screencapture, System Settings URLs, macOS
+ *  TCC permission checks). Hidden from Claude on other platforms so the model
+ *  never reaches for automation that can only error — the Phase-2 Windows
+ *  port will supply win32 implementations behind these same names. */
+export const MAC_ONLY_TOOLS: ReadonlySet<string> = new Set([
+  "run_applescript",
+  "run_shortcut",
+  "list_shortcuts",
+  "check_mac_permissions",
+  "open_app",
+  "quit_app",
+  "set_system_volume",
+  "get_system_volume",
+  "set_screen_brightness",
+  "control_media",
+  "see_screen",
+  "take_screenshot",
+  "open_settings",
+  "search_files",
+  "list_browser_tabs",
+  "open_browser_tab",
+  "activate_browser_tab",
+  "close_browser_tab",
+  "organize_browser_tabs",
+  "read_browser_page",
+  "run_browser_js",
+]);
+
 /** Tool list actually offered to Claude: Composio meta-tools are hidden until
- *  COMPOSIO_API_KEY is configured, so the model never wanders into a bridge
- *  that can only error. */
+ *  COMPOSIO_API_KEY is configured (so the model never wanders into a bridge
+ *  that can only error), and macOS-only automation is hidden off-darwin.
+ *  Always use THIS, never raw TOOL_DEFINITIONS. */
 export function getToolDefinitions(): Tool[] {
-  if (process.env.COMPOSIO_API_KEY?.trim()) return TOOL_DEFINITIONS;
-  return TOOL_DEFINITIONS.filter((t) => !t.name.startsWith("composio_"));
+  let tools: Tool[] = TOOL_DEFINITIONS;
+  if (!process.env.COMPOSIO_API_KEY?.trim()) {
+    tools = tools.filter((t) => !t.name.startsWith("composio_"));
+  }
+  if (process.platform !== "darwin") {
+    tools = tools.filter((t) => !MAC_ONLY_TOOLS.has(t.name));
+  }
+  return tools;
 }

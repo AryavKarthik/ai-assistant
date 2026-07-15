@@ -1,5 +1,23 @@
-import { BrowserWindow, screen } from "electron";
+import { BrowserWindow, screen, shell } from "electron";
 import { join } from "node:path";
+
+/** Route link clicks to the default browser instead of the window itself.
+ *  Without BOTH handlers, an anchor in a reply (e.g. a YouTube link) either
+ *  navigates the Electron window away from the app (will-navigate) or opens a
+ *  bare child BrowserWindow (window.open) — each of which reads as "the link
+ *  doesn't work". Applied to every window we create. */
+function openLinksExternally(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+  win.webContents.on("will-navigate", (event, url) => {
+    // Allow the dev-server / local file loads; anything else goes external.
+    if (url.startsWith("http://localhost") || url.startsWith("file:")) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+  });
+}
 
 // The orb window is ALWAYS panel-sized. Collapsed vs expanded is purely a
 // renderer state: collapsed shows only the orb (pinned to the window's
@@ -82,16 +100,30 @@ export function createOrbWindow(): BrowserWindow {
       backgroundThrottling: false,
     },
   });
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  // Float above full-screen apps like Siri does.
+  // macOS Spaces concept; documented no-op elsewhere but guard explicitly.
+  if (process.platform === "darwin") {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+  // Float above full-screen apps like Siri does. The "screen-saver" level is
+  // macOS/Linux z-ordering; on Windows the level argument is ignored and
+  // plain always-on-top applies, which is the right behavior there.
   win.setAlwaysOnTop(true, "screen-saver");
   positionOrbTopRight(win);
 
   // Allow mic + camera access — without this Electron silently denies getUserMedia.
-  // macOS will still show its own permission dialog on first use.
+  // macOS will still show its own permission dialog on first use. The CHECK
+  // handler matters too: sandboxed renderers consult it synchronously
+  // (navigator.permissions.query and some getUserMedia paths), and without one
+  // Electron's default could report "denied" even though requests were granted
+  // — mic access that worked one launch and not the next. Both windows share
+  // the default session, so registering here covers the app window as well.
   win.webContents.session.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === "media" || permission === "mediaKeySystem");
   });
+  win.webContents.session.setPermissionCheckHandler(
+    (_wc, permission) => permission === "media" || permission === "mediaKeySystem",
+  );
+  openLinksExternally(win);
 
   // Stays hidden until a wake word, timer, or hotkey activates it — never
   // shown just because the window finished loading (same in dev and prod).
@@ -112,9 +144,17 @@ export function createAppWindow(): BrowserWindow {
     show: false,
     frame: true,
     transparent: false,
-    vibrancy: "under-window",
-    titleBarStyle: "hiddenInset",
     backgroundColor: "#080808",
+    // Chrome differs per OS: macOS gets vibrancy + the inset traffic-light
+    // title bar the AppShell's 28px drag inset is designed around; Windows
+    // keeps a standard frame (the inset just reads as padding) and gets
+    // Win11 acrylic for a similar translucency — silently ignored on Win10,
+    // which falls back to the solid backgroundColor above.
+    ...(process.platform === "darwin"
+      ? { vibrancy: "under-window" as const, titleBarStyle: "hiddenInset" as const }
+      : process.platform === "win32"
+        ? { backgroundMaterial: "acrylic" as const }
+        : {}),
     webPreferences: {
       preload: join(import.meta.dirname, "../preload/preload.js"),
       nodeIntegration: false,
@@ -122,6 +162,8 @@ export function createAppWindow(): BrowserWindow {
       sandbox: true,
     },
   });
+
+  openLinksExternally(win);
 
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL);

@@ -8,6 +8,7 @@ import {
   IconUser,
   IconRepeat,
   IconMoodSmile,
+  IconFolders,
   type Icon,
 } from "@tabler/icons-react";
 import { nova } from "../lib/ipc";
@@ -15,6 +16,7 @@ import type { AllPrefs, VoicePreferences, ProactivePrefs, AlertPrefs, AuthState 
 import { DEFAULT_VOICE_PREFERENCES, DEFAULT_PROACTIVE_PREFS, DEFAULT_ALERT_PREFS } from "@shared/types";
 import { LoopsSection } from "../components/settings/LoopsSection";
 import { PersonalitySection } from "../components/settings/PersonalitySection";
+import { SkillsSection } from "../components/settings/SkillsSection";
 import { GOOGLE_VOICE_QUALITY_OPTIONS, googleTtsVoicesForQuality } from "@shared/google-voices";
 import { Select } from "../components/ui/Select";
 import { cn } from "../lib/utils";
@@ -140,6 +142,7 @@ type SectionId =
   | "sounds"
   | "proactive"
   | "loops"
+  | "skills"
   | "personality"
   | "account";
 
@@ -150,6 +153,7 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: Icon }> = [
   { id: "sounds", label: "Sounds", icon: IconBell },
   { id: "proactive", label: "Proactive", icon: IconSparkles },
   { id: "loops", label: "Loops", icon: IconRepeat },
+  { id: "skills", label: "Skills", icon: IconFolders },
   { id: "personality", label: "Personality", icon: IconMoodSmile },
   { id: "account", label: "Account", icon: IconUser },
 ];
@@ -322,7 +326,7 @@ export function SettingsPage() {
                   </Row>
                   <Row label="Keyboard shortcut" description="Toggle the popup manually.">
                     <kbd className="rounded-full border border-white/[0.08] bg-white/[0.06] px-3 py-1.5 text-[11px] font-medium tracking-wide text-[--nova-text-secondary]">
-                      ⌘ ⇧ Space
+                      {nova().platform === "darwin" ? "⌘ ⇧ Space" : "Ctrl ⇧ Space"}
                     </kbd>
                   </Row>
                 </Group>
@@ -643,6 +647,16 @@ export function SettingsPage() {
                   subtitle="What Nova has learned about how you want it to talk."
                 />
                 <PersonalitySection Group={Group} />
+              </>
+            )}
+
+            {section === "skills" && (
+              <>
+                <SectionTitle
+                  title="Skills"
+                  subtitle="Voice-triggered routines that open files, apps, links, and shortcuts."
+                />
+                <SkillsSection Toggle={Toggle} Group={Group} />
               </>
             )}
 

@@ -1,4 +1,6 @@
 import { exec, execFile } from "node:child_process";
+import { cp, rename, rm, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join, normalize } from "node:path";
 
 function run(cmd: string, args: string[], timeoutMs = 8000): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -445,7 +447,12 @@ export async function runShellCommand(
   return new Promise((resolve) => {
     exec(
       command,
-      { timeout: timeoutMs, maxBuffer: 8 * 1024 * 1024, shell: "/bin/zsh" },
+      {
+        timeout: timeoutMs,
+        maxBuffer: 8 * 1024 * 1024,
+        // zsh on macOS; undefined = Node's default (cmd.exe) on Windows.
+        shell: process.platform === "darwin" ? "/bin/zsh" : undefined,
+      },
       (err, stdout, stderr) => {
         const merged = [stdout, stderr].filter(Boolean).join("\n").trim();
         const { output, truncated } = clampOutput(merged);
@@ -515,6 +522,111 @@ export async function openPath(path: string): Promise<void> {
   if (!path.trim()) throw new Error("path is required");
   // `open` handles files, folders, and .app bundles alike.
   await run("/usr/bin/open", [path]);
+}
+
+function assertAbsolutePath(path: string, fieldName: string): string {
+  const trimmed = path.trim();
+  if (!trimmed) throw new Error(`${fieldName} is required`);
+  if (!isAbsolute(trimmed)) throw new Error(`${fieldName} must be an absolute path`);
+  return normalize(trimmed);
+}
+
+async function ensurePathExists(path: string, fieldName: string): Promise<void> {
+  try {
+    await stat(path);
+  } catch {
+    throw new Error(`${fieldName} does not exist: ${path}`);
+  }
+}
+
+async function ensureParentDirectoryExists(path: string): Promise<void> {
+  const parent = dirname(path);
+  try {
+    const s = await stat(parent);
+    if (!s.isDirectory()) throw new Error("not directory");
+  } catch {
+    throw new Error(`Destination parent directory does not exist: ${parent}`);
+  }
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function replacePath(path: string): Promise<void> {
+  await rm(path, { recursive: true, force: true });
+}
+
+export async function trashFile(path: string): Promise<{ trashed: string }> {
+  const resolved = assertAbsolutePath(path, "path");
+  await ensurePathExists(resolved, "path");
+  const { shell } = await import("electron");
+  await shell.trashItem(resolved);
+  return { trashed: resolved };
+}
+
+export async function moveFile(options: {
+  sourcePath: string;
+  destinationPath: string;
+  overwrite?: boolean;
+}): Promise<{ from: string; to: string; overwritten: boolean }> {
+  const sourcePath = assertAbsolutePath(options.sourcePath, "source_path");
+  const destinationPath = assertAbsolutePath(options.destinationPath, "destination_path");
+  const overwrite = options.overwrite ?? false;
+
+  await ensurePathExists(sourcePath, "source_path");
+  await ensureParentDirectoryExists(destinationPath);
+
+  if (sourcePath === destinationPath) {
+    return { from: sourcePath, to: destinationPath, overwritten: false };
+  }
+
+  const destinationExists = await pathExists(destinationPath);
+  if (destinationExists && !overwrite) {
+    throw new Error(`Destination already exists: ${destinationPath}`);
+  }
+  if (destinationExists && overwrite) {
+    await replacePath(destinationPath);
+  }
+
+  try {
+    await rename(sourcePath, destinationPath);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code !== "EXDEV") throw err;
+    await cp(sourcePath, destinationPath, { recursive: true, force: overwrite });
+    await rm(sourcePath, { recursive: true, force: true });
+  }
+  return { from: sourcePath, to: destinationPath, overwritten: destinationExists && overwrite };
+}
+
+export async function renameFile(options: {
+  path: string;
+  newName: string;
+  overwrite?: boolean;
+}): Promise<{ from: string; to: string; overwritten: boolean }> {
+  const sourcePath = assertAbsolutePath(options.path, "path");
+  await ensurePathExists(sourcePath, "path");
+  const newName = options.newName.trim();
+  if (!newName) throw new Error("new_name is required");
+  if (newName.includes("/") || newName.includes("\\")) {
+    throw new Error("new_name must be a base name, not a path");
+  }
+  const sourceName = basename(sourcePath);
+  if (newName === sourceName) {
+    return { from: sourcePath, to: sourcePath, overwritten: false };
+  }
+  const destinationPath = join(dirname(sourcePath), newName);
+  return moveFile({
+    sourcePath,
+    destinationPath,
+    overwrite: options.overwrite ?? false,
+  });
 }
 
 // ─── System Settings panes ──────────────────────────────────────────────────────

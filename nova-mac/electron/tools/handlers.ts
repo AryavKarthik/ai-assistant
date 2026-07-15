@@ -43,6 +43,9 @@ import {
   getClipboard,
   setClipboard,
   takeScreenshot,
+  trashFile,
+  moveFile,
+  renameFile,
   type MediaAction,
 } from "./mac-control";
 import { captureScreen } from "./screen";
@@ -53,8 +56,16 @@ import {
   closeBrowserTab,
   getActiveTabContent,
   executeBrowserJs,
+  organizeBrowserTabs,
 } from "./browser-control";
 import { getTimerManager } from "../timers";
+import {
+  createSkill,
+  deleteSkill,
+  listSkills,
+  runSkill,
+  updateSkill,
+} from "./skills-store";
 
 export interface ToolContext {
   userId: string;
@@ -119,15 +130,17 @@ export async function executeTool(
         case "fetch_webpage":
           return handleFetchWebpage(input);
         case "list_browser_tabs":
-          return listBrowserTabs() as Promise<Record<string, unknown>>;
+          return handleListBrowserTabs(input);
         case "open_browser_tab":
           return handleOpenBrowserTab(input);
         case "activate_browser_tab":
           return handleActivateBrowserTab(input);
         case "close_browser_tab":
           return handleCloseBrowserTab(input);
+        case "organize_browser_tabs":
+          return handleOrganizeBrowserTabs(input);
         case "read_browser_page":
-          return getActiveTabContent() as Promise<Record<string, unknown>>;
+          return handleReadBrowserPage(input);
         case "run_browser_js":
           return handleRunBrowserJs(input);
         case "run_shell_command":
@@ -136,6 +149,22 @@ export async function executeTool(
           return handleSearchFiles(input);
         case "open_path":
           return handleOpenPath(input);
+        case "trash_file":
+          return handleTrashFile(input);
+        case "move_file":
+          return handleMoveFile(input);
+        case "rename_file":
+          return handleRenameFile(input);
+        case "create_custom_skill":
+          return handleCreateCustomSkill(input);
+        case "list_custom_skills":
+          return handleListCustomSkills();
+        case "update_custom_skill":
+          return handleUpdateCustomSkill(input);
+        case "delete_custom_skill":
+          return handleDeleteCustomSkill(input);
+        case "run_custom_skill":
+          return handleRunCustomSkill(input);
         case "open_settings":
           return handleOpenSettings(input);
         case "get_clipboard":
@@ -810,31 +839,94 @@ async function handleRunShortcut(input: unknown): Promise<Record<string, unknown
 
 // ─── Browser control ────────────────────────────────────────────────────────────
 
+async function handleListBrowserTabs(input: unknown): Promise<Record<string, unknown>> {
+  const { browser } = input as { browser?: string };
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await listBrowserTabs({ browser });
+  return result as Record<string, unknown>;
+}
+
 async function handleOpenBrowserTab(input: unknown): Promise<Record<string, unknown>> {
-  const { url } = input as { url?: string };
+  const { url, browser } = input as { url?: string; browser?: string };
   if (!url?.trim()) return { error: "url is required" };
-  const result = await openBrowserTab(url.trim());
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await openBrowserTab(url.trim(), browser);
   return { success: true, ...result };
 }
 
 async function handleActivateBrowserTab(input: unknown): Promise<Record<string, unknown>> {
-  const { tab_index, window_index } = input as { tab_index?: number; window_index?: number };
+  const { tab_index, window_index, browser } = input as {
+    tab_index?: number;
+    window_index?: number;
+    browser?: string;
+  };
   if (!tab_index) return { error: "tab_index is required" };
-  const result = await activateBrowserTab({ tabIndex: tab_index, windowIndex: window_index });
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await activateBrowserTab({ tabIndex: tab_index, windowIndex: window_index, browser });
   return { success: true, ...result };
 }
 
 async function handleCloseBrowserTab(input: unknown): Promise<Record<string, unknown>> {
-  const { tab_index, window_index } = input as { tab_index?: number; window_index?: number };
+  const { tab_index, window_index, browser } = input as {
+    tab_index?: number;
+    window_index?: number;
+    browser?: string;
+  };
   if (!tab_index) return { error: "tab_index is required" };
-  const result = await closeBrowserTab({ tabIndex: tab_index, windowIndex: window_index });
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await closeBrowserTab({ tabIndex: tab_index, windowIndex: window_index, browser });
   return { success: true, ...result };
 }
 
+async function handleReadBrowserPage(input: unknown): Promise<Record<string, unknown>> {
+  const { browser } = input as { browser?: string };
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await getActiveTabContent({ browser });
+  return result as Record<string, unknown>;
+}
+
 async function handleRunBrowserJs(input: unknown): Promise<Record<string, unknown>> {
-  const { code } = input as { code?: string };
+  const { code, browser } = input as { code?: string; browser?: string };
   if (!code?.trim()) return { error: "code is required" };
-  const result = await executeBrowserJs(code);
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  const result = await executeBrowserJs(code, { browser });
+  return { success: true, ...result };
+}
+
+async function handleOrganizeBrowserTabs(input: unknown): Promise<Record<string, unknown>> {
+  const { window_index, mode, dry_run, browser } = input as {
+    window_index?: number;
+    mode?: "domain" | "title";
+    dry_run?: boolean;
+    browser?: string;
+  };
+  if (window_index !== undefined && window_index < 1) {
+    return { error: "window_index must be >= 1" };
+  }
+  if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
+    return { error: "browser must be chrome or safari" };
+  }
+  if (mode !== undefined && mode !== "domain" && mode !== "title") {
+    return { error: "mode must be domain or title" };
+  }
+  const result = await organizeBrowserTabs({
+    windowIndex: window_index,
+    mode,
+    dryRun: dry_run,
+    browser,
+  });
   return { success: true, ...result };
 }
 
@@ -861,8 +953,106 @@ async function handleSearchFiles(input: unknown): Promise<Record<string, unknown
 async function handleOpenPath(input: unknown): Promise<Record<string, unknown>> {
   const { path } = input as { path?: string };
   if (!path?.trim()) return { error: "path is required" };
+  if (!path.startsWith("/")) return { error: "path must be an absolute path" };
   await openPath(path.trim());
   return { success: true, opened: path.trim() };
+}
+
+async function handleTrashFile(input: unknown): Promise<Record<string, unknown>> {
+  const { path } = input as { path?: string };
+  if (!path?.trim()) return { error: "path is required" };
+  if (!path.startsWith("/")) return { error: "path must be an absolute path" };
+  const result = await trashFile(path.trim());
+  return { success: true, ...result };
+}
+
+async function handleMoveFile(input: unknown): Promise<Record<string, unknown>> {
+  const { source_path, destination_path, overwrite } = input as {
+    source_path?: string;
+    destination_path?: string;
+    overwrite?: boolean;
+  };
+  if (!source_path?.trim()) return { error: "source_path is required" };
+  if (!destination_path?.trim()) return { error: "destination_path is required" };
+  if (!source_path.startsWith("/")) return { error: "source_path must be an absolute path" };
+  if (!destination_path.startsWith("/")) {
+    return { error: "destination_path must be an absolute path" };
+  }
+  const result = await moveFile({
+    sourcePath: source_path.trim(),
+    destinationPath: destination_path.trim(),
+    overwrite,
+  });
+  return { success: true, ...result };
+}
+
+async function handleRenameFile(input: unknown): Promise<Record<string, unknown>> {
+  const { path, new_name, overwrite } = input as {
+    path?: string;
+    new_name?: string;
+    overwrite?: boolean;
+  };
+  if (!path?.trim()) return { error: "path is required" };
+  if (!new_name?.trim()) return { error: "new_name is required" };
+  if (!path.startsWith("/")) return { error: "path must be an absolute path" };
+  const result = await renameFile({
+    path: path.trim(),
+    newName: new_name.trim(),
+    overwrite,
+  });
+  return { success: true, ...result };
+}
+
+async function handleCreateCustomSkill(input: unknown): Promise<Record<string, unknown>> {
+  const { name, triggers, actions, enabled } = input as {
+    name?: string;
+    triggers?: string[];
+    actions?: unknown[];
+    enabled?: boolean;
+  };
+  if (!name?.trim()) return { error: "name is required" };
+  if (!Array.isArray(triggers) || triggers.length === 0) {
+    return { error: "triggers must be a non-empty array" };
+  }
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return { error: "actions must be a non-empty array" };
+  }
+  const skill = createSkill({ name, triggers, actions, enabled });
+  return { success: true, skill };
+}
+
+async function handleListCustomSkills(): Promise<Record<string, unknown>> {
+  return { skills: listSkills() };
+}
+
+async function handleUpdateCustomSkill(input: unknown): Promise<Record<string, unknown>> {
+  const { id, name, triggers, actions, enabled } = input as {
+    id?: string;
+    name?: string;
+    triggers?: string[];
+    actions?: unknown[];
+    enabled?: boolean;
+  };
+  if (!id?.trim()) return { error: "id is required" };
+  const skill = updateSkill(id.trim(), { name, triggers, actions, enabled });
+  if (!skill) return { error: "skill not found" };
+  return { success: true, skill };
+}
+
+async function handleDeleteCustomSkill(input: unknown): Promise<Record<string, unknown>> {
+  const { id } = input as { id?: string };
+  if (!id?.trim()) return { error: "id is required" };
+  const deleted = deleteSkill(id.trim());
+  if (!deleted) return { error: "skill not found" };
+  return { success: true, id: id.trim() };
+}
+
+async function handleRunCustomSkill(input: unknown): Promise<Record<string, unknown>> {
+  const { id } = input as { id?: string };
+  if (!id?.trim()) return { error: "id is required" };
+  const result = await runSkill(id.trim());
+  if (!result) return { error: "skill not found or disabled" };
+  return { success: true, ...result };
 }
 
 async function handleOpenSettings(input: unknown): Promise<Record<string, unknown>> {

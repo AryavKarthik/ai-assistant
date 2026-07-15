@@ -5,7 +5,7 @@ import { config as loadEnv } from "dotenv";
 // .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
 loadEnv({ path: [".env.local", ".env"] });
 
-import { app, BrowserWindow, globalShortcut, ipcMain, Notification } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Notification, systemPreferences, dialog } from "electron";
 import { join, resolve } from "node:path";
 import {
   createOrbWindow,
@@ -116,6 +116,30 @@ function activateOrb(): void {
 
 app.dock?.hide(); // no Dock icon — tray-only
 
+// Single instance. Required for Windows deep links (delivered by relaunching
+// the exe with the nova:// URL in argv — see second-instance below), and it
+// stops repeat launches from spawning duplicate tray apps on any platform.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+/** Shared deep-link router — macOS arrives via open-url, Windows/Linux via
+ *  the second instance's argv. */
+function routeDeepLink(url: string): void {
+  if (url.startsWith("nova://auth-callback")) {
+    void handleAuthCallback(url);
+  } else if (url.startsWith("nova://connections-callback")) {
+    void import("./google/connections").then((m) => m.handleConnectionsCallback(url, appWin));
+  }
+}
+
+// Windows/Linux deliver deep links by launching a second instance with the
+// URL as an argv entry; the lock above forwards it here instead.
+app.on("second-instance", (_event, argv) => {
+  const url = argv.find((a) => a.startsWith("nova://"));
+  if (url) routeDeepLink(url);
+});
+
 // In dev (unpackaged via `electron .`), setAsDefaultProtocolClient("nova") alone
 // registers the scheme against the bare Electron binary with no argument for
 // which app to load — macOS then relaunches plain
@@ -135,19 +159,40 @@ if (process.defaultApp) {
 // macOS delivers deep links via open-url
 app.on("open-url", (event, url) => {
   event.preventDefault();
-  if (url.startsWith("nova://auth-callback")) {
-    void handleAuthCallback(url);
-  } else if (url.startsWith("nova://connections-callback")) {
-    void import("./google/connections").then((m) => m.handleConnectionsCallback(url, appWin));
-  }
+  routeDeepLink(url);
 });
 
 app.whenReady().then(async () => {
+  // Microphone TCC, up front and deterministic. Before this, nothing ever
+  // asked macOS for mic access from the main process: the first getUserMedia
+  // in the renderer raced the OS prompt, and a previously-denied state made
+  // wake capture silently receive nothing — no error anywhere, the wake word
+  // just "didn't work". Ask once at launch; if the user has denied it,
+  // askForMediaAccess resolves false without prompting, so tell them where
+  // to fix it instead of failing silently.
+  if (process.platform === "darwin") {
+    const micStatus = systemPreferences.getMediaAccessStatus("microphone");
+    if (micStatus !== "granted") {
+      const granted = await systemPreferences
+        .askForMediaAccess("microphone")
+        .catch(() => false);
+      if (!granted && Notification.isSupported()) {
+        new Notification({
+          title: "Nova can't hear you",
+          body: "Enable Nova in System Settings → Privacy & Security → Microphone, then relaunch.",
+        }).show();
+      }
+    }
+  }
+
   // Learned personality traits live in userData; the store gets the dir
   // injected (it can't read electron's `app` itself — vitest loads it in
   // plain Node via chat-turn).
   await import("./personality/store").then((m) =>
     m.initPersonalityStore(app.getPath("userData")),
+  );
+  await import("./tools/skills-store").then((m) =>
+    m.initSkillsStore(app.getPath("userData")),
   );
 
   registerIpcHandlers({
@@ -264,6 +309,40 @@ app.whenReady().then(async () => {
   ipcMain.handle(IpcChannel.PersonalityDelete, (_e, id: string) =>
     import("./personality/store").then((m) => m.removeTrait(id)),
   );
+  ipcMain.handle(IpcChannel.SkillsList, () =>
+    import("./tools/skills-store").then((m) => m.listSkills()),
+  );
+  ipcMain.handle(
+    IpcChannel.SkillsCreate,
+    (_e, req: { name: string; triggers: string[]; actions: unknown[]; enabled?: boolean }) =>
+      import("./tools/skills-store").then((m) => m.createSkill(req)),
+  );
+  ipcMain.handle(
+    IpcChannel.SkillsUpdate,
+    (
+      _e,
+      req: {
+        id: string;
+        name?: string;
+        triggers?: string[];
+        actions?: unknown[];
+        enabled?: boolean;
+      },
+    ) => import("./tools/skills-store").then((m) => m.updateSkill(req.id, req)),
+  );
+  ipcMain.handle(IpcChannel.SkillsDelete, (_e, id: string) =>
+    import("./tools/skills-store").then((m) => m.deleteSkill(id)),
+  );
+  ipcMain.handle(IpcChannel.SkillsRun, (_e, id: string) =>
+    import("./tools/skills-store").then((m) => m.runSkill(id)),
+  );
+  ipcMain.handle(IpcChannel.SkillsPickPath, async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ["openFile", "openDirectory"],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+    return result.filePaths[0] ?? null;
+  });
 
   // Reminders
   ipcMain.handle(IpcChannel.RemindersGet, () =>
@@ -489,17 +568,22 @@ app.whenReady().then(async () => {
   }
 
   // Real user drags (not our own programmatic repositioning) — persist where
-  // they left it and stop auto-centering it back to the corner. `moved`
-  // (macOS-only) fires once when a drag finishes.
-  orbWin.on("moved", () => {
+  // they left it and stop auto-centering it back to the corner.
+  function persistUserOrbPosition(): void {
     if (orbMoveIsProgrammatic || !orbWin || orbWin.isDestroyed()) return;
     orbUserPositioned = true;
     const { x, y } = orbWin.getBounds();
     saveOrbPosition({ x, y });
-  });
+  }
+  // `moved` (drag finished) is macOS-only; Windows/Linux never fire it, so
+  // there we synthesize the same "drag ended" moment from the continuous
+  // `move` stream instead: 400ms of stillness after the last non-programmatic
+  // move = the drag is over (see the `move` handler below).
+  orbWin.on("moved", persistUserOrbPosition);
+  let movedFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // `move` (cross-platform) fires continuously *while* dragging — used only
-  // to compute live velocity so the renderer can wiggle the orb like jelly
+  // `move` (cross-platform) fires continuously *while* dragging — used to
+  // compute live velocity so the renderer can wiggle the orb like jelly
   // as it's dragged. Reset the tracking point whenever the window is hidden
   // or resized/repositioned by us, so a stale gap doesn't get read as motion.
   let lastMove: { x: number; y: number; t: number } | null = null;
@@ -515,6 +599,13 @@ app.whenReady().then(async () => {
       });
     }
     lastMove = { x, y, t: now };
+    if (process.platform !== "darwin") {
+      if (movedFallbackTimer) clearTimeout(movedFallbackTimer);
+      movedFallbackTimer = setTimeout(() => {
+        movedFallbackTimer = null;
+        persistUserOrbPosition();
+      }, 400);
+    }
   });
   orbWin.on("hide", () => {
     lastMove = null;

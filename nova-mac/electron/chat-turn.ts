@@ -17,6 +17,7 @@ import {
   resolveAssistantText,
 } from "./memory/index";
 import { getPersonalityBlock } from "./personality/store";
+import { runSkillByTrigger } from "./tools/skills-store";
 import { getToolDefinitions } from "./tools/definitions";
 import { executeTool, type ToolContext } from "./tools/handlers";
 import {
@@ -77,6 +78,15 @@ const TOOL_STEP_LABELS: Record<string, string> = {
   control_media: "Controlling playback…",
   play_youtube: "Pulling it up on YouTube…",
   see_screen: "Looking at your screen…",
+  organize_browser_tabs: "Organizing tabs…",
+  trash_file: "Moving to Trash…",
+  move_file: "Moving file…",
+  rename_file: "Renaming file…",
+  create_custom_skill: "Saving custom skill…",
+  list_custom_skills: "Checking custom skills…",
+  update_custom_skill: "Updating custom skill…",
+  delete_custom_skill: "Removing custom skill…",
+  run_custom_skill: "Running custom skill…",
   composio_search_tools: "Finding the right tool…",
   composio_execute: "Working in your apps…",
   create_agent_loop: "Scheduling that…",
@@ -179,6 +189,17 @@ export async function streamTurn(
   inFlight.set(req.requestId, controller);
 
   try {
+    const triggerRun = await runSkillByTrigger(transcript);
+    if (triggerRun) {
+      const failureLine =
+        triggerRun.failures.length > 0
+          ? ` Some actions failed (${triggerRun.failures.length}).`
+          : "";
+      const text = `Running "${triggerRun.skill_name}" now.${failureLine}`;
+      emit(IpcChannel.ChatDone, { requestId: req.requestId, text });
+      return;
+    }
+
     const userId = await getUserId();
     const conversationId = await getOrCreateConversation(userId);
 
