@@ -5,6 +5,7 @@ import type { OrbStateName } from "@shared/types";
 import { VoiceOrb, type VoiceVisualMode } from "./VoiceOrb";
 import { TextComposer } from "../composer/TextComposer";
 import { nova } from "../../lib/ipc";
+import { linkifyText } from "../../lib/linkify";
 import { appleSpring, jellySpring } from "../../motion/springs";
 import { useOrbDragWiggle } from "../../hooks/useOrbDragWiggle";
 
@@ -153,6 +154,15 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
   function handlePointerMove(e: React.PointerEvent) {
     const d = drag.current;
     if (!d) return;
+    // Phantom-drag guard: if the pointerup was ever lost (window hidden
+    // mid-drag, hotkey, Mission Control, capture dropped), drag.current
+    // survives with no button held — and then every hover over the orb moved
+    // the window by the cursor's delta, so the orb chased/"ran away from" the
+    // cursor until the next click. No buttons down ⇒ this cannot be a drag.
+    if (e.buttons === 0) {
+      drag.current = null;
+      return;
+    }
     // Don't move the window until the press has clearly become a drag —
     // streaming sub-threshold jitter made every click nudge the window a
     // pixel or two and fire the jelly wiggle, which read as the orb
@@ -203,6 +213,11 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
   function handlePanelPointerMove(e: React.PointerEvent) {
     const d = panelDrag.current;
     if (!d) return;
+    // Same phantom-drag guard as the orb's handlePointerMove.
+    if (e.buttons === 0) {
+      panelDrag.current = null;
+      return;
+    }
     const dx = e.screenX - d.lastX;
     const dy = e.screenY - d.lastY;
     if (dx !== 0 || dy !== 0) {
@@ -257,6 +272,7 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
                 onPointerMove={handlePanelPointerMove}
                 onPointerUp={handlePanelPointerEnd}
                 onPointerCancel={handlePanelPointerEnd}
+                onLostPointerCapture={handlePanelPointerEnd}
                 title="Drag to move Nova"
                 style={{
                   display: "flex",
@@ -345,9 +361,10 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
                     border: "1px solid rgba(255,255,255,0.1)",
                     borderRadius: 18,
                     padding: "10px 14px",
+                    overflowWrap: "break-word",
                   }}
                 >
-                  {state.responseText}
+                  {linkifyText(state.responseText)}
                 </div>
               )}
             </div>
@@ -365,6 +382,7 @@ export function Orb({ state, level, expanded, onOrbClick, onExpand, onCollapse, 
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerCancel}
+        onLostPointerCapture={handlePointerCancel}
         title={expanded ? "Nova — click to collapse, drag to move" : "Nova — click to open, drag to move"}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}

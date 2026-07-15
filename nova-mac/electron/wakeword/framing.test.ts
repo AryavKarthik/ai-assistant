@@ -22,6 +22,14 @@ describe("AudioRingBuffer", () => {
     expect(win!.length).toBe(SAMPLES_PER_FRAME);
     expect(win![0]).toBe(16384); // raw int16 magnitude, NOT normalized to [-1, 1]
   });
+
+  it("reset drops all buffered samples", () => {
+    const ring = new AudioRingBuffer();
+    ring.pushInt16(new Int16Array(SAMPLES_PER_FRAME).fill(1));
+    ring.reset();
+    expect(ring.available()).toBe(0);
+    expect(ring.take(SAMPLES_PER_FRAME)).toBeNull();
+  });
 });
 
 describe("WindowAccumulator", () => {
@@ -35,5 +43,15 @@ describe("WindowAccumulator", () => {
     // slides by one on the next push
     const out2 = acc.push(Float32Array.from([4, 4]));
     expect(Array.from(out2!)).toEqual([2, 2, 3, 3, 4, 4]);
+  });
+
+  it("reset requires a full refill before yielding a window again", () => {
+    const acc = new WindowAccumulator(2, 1);
+    acc.push(Float32Array.from([1]));
+    expect(acc.push(Float32Array.from([2]))).not.toBeNull();
+    acc.reset();
+    // Stale vectors are gone: one new push must not complete a window.
+    expect(acc.push(Float32Array.from([3]))).toBeNull();
+    expect(Array.from(acc.push(Float32Array.from([4]))!)).toEqual([3, 4]);
   });
 });

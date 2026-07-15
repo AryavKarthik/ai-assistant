@@ -69,6 +69,12 @@ async function recordUntilSilence(
     // 260ms of sustained speech confirms — long enough to reject door slams
     // and keyboard clatter, short enough not to eat the first word.
     speechHoldMs: 260,
+    // Must outlive the silence window. The gate's default decay (2s) cleared
+    // confirmed() BEFORE a silenceMs ≥ 2000 timer fired; a single ambient blip
+    // after that cleared the silence timer, and with confirmed gone nothing
+    // could ever re-arm it — recording ran to the 30s hard cap instead of
+    // stopping after the configured silence ("listening never stops" bug).
+    confirmedDecayMs: options.silenceMs + 2000,
     initialNoiseFloor: options.initialNoiseFloor,
     // With a warm floor (idle ambient monitor / previous turn), skip in-gate
     // calibration — the user is typically already talking when this starts.
@@ -209,14 +215,39 @@ export function useVoice(): {
     async function boot() {
       prefs.current = await nova().getVoicePreferences();
       if (cancelled) return;
-      const stream = await mic.current.acquire();
-      if (cancelled) return;
+      // Mic acquisition used to be a bare await: a denied/flaky microphone
+      // rejected here as an unhandled promise, wake capture never started,
+      // and nothing was ever shown — the app just looked like the wake word
+      // "randomly doesn't work". Surface the failure and retry with backoff
+      // (covers the user granting permission in System Settings after launch).
+      let stream: MediaStream | null = null;
+      for (let attempt = 0; attempt < 5 && !cancelled; attempt++) {
+        try {
+          stream = await mic.current.acquire();
+          break;
+        } catch {
+          if (attempt === 0) {
+            showError(
+              nova().platform === "win32"
+                ? "Mic unavailable — enable microphone access in Settings → Privacy & security → Microphone"
+                : "Mic unavailable — enable Nova in System Settings → Privacy & Security → Microphone",
+            );
+          }
+          await new Promise((r) => setTimeout(r, 3000 * (attempt + 1)));
+        }
+      }
+      if (!stream || cancelled) return;
       stopWake = startWakeCapture(
         stream,
         (buf) => nova().sendWakeFrame(buf),
         (buf) => {
           sttRing.current.push(buf);
-          if (sttRing.current.length > 8) sttRing.current.shift();
+          // ~1s of pre-roll (12 × 80ms). The barge-in probe depends on this
+          // covering the WHOLE interrupting utterance: the listener needs
+          // ~250-380ms of sustained speech before it even fires, so a short
+          // kill word ("stop") is already over when the probe starts — only
+          // the ring still has it.
+          if (sttRing.current.length > 12) sttRing.current.shift();
           if (sttForward.current) nova().sttStreamAudio(buf);
         },
       );
@@ -405,6 +436,12 @@ export function useVoice(): {
     // `noSpeechMs` overrides the give-up window (used for the short reply
     // window after a proactive announcement).
     async function runTurn(opts?: { followup?: boolean; noSpeechMs?: number }) {
+      // A fresh wake starts a fresh conversation: the noise-turn counter must
+      // not carry over from the previous conversation's ending. Stale state
+      // here made a new "Hey Jarvis" activation dismiss itself on the first
+      // quiet moment (counter already at its limit) — one flavor of
+      // "the wake word only works sometimes".
+      if (!opts?.followup) consecutiveNoiseTurns.current = 0;
       busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
@@ -655,6 +692,28 @@ export function useVoice(): {
         cue("bargeIn");
         dispatch({ type: "bargeIn" });
 
+        // Streaming STT with the sttRing pre-roll, exactly like a main turn.
+        // This is NOT an optimization here — it's what lets a short kill word
+        // be heard at all. The barge listener needs ~250-380ms of sustained
+        // speech before this function even runs, so by the time the probe's
+        // recorder starts, "stop" / "that's all" is usually already finished:
+        // the batch path below hears silence, the probe read as a false
+        // alarm, and Nova RESUMED the reply and re-listened — the "keeps
+        // listening after a kill word" bug. The ring holds the last ~1s of
+        // PCM, which contains the interrupting utterance itself.
+        const probeStreamPromise: Promise<boolean> = (async () => {
+          const sampleRateHertz = getCaptureSampleRate();
+          if (!sampleRateHertz) return false;
+          const ok = await nova()
+            .sttStreamStart({ sampleRateHertz })
+            .catch(() => false);
+          if (ok && !cancelled) {
+            for (const f of sttRing.current) nova().sttStreamAudio(f);
+            sttForward.current = true;
+          }
+          return ok;
+        })();
+
         let probe: RecordResult | null = null;
         try {
           probe = await recordUntilSilence(
@@ -672,12 +731,22 @@ export function useVoice(): {
         }
         setLevel(0);
         if (cancelled) {
+          abortSttStream();
           dispatch({ type: "dismiss" });
           return;
         }
 
         let s = "";
-        if (probe && probe.blob.size >= MIN_SPEECH_BLOB_BYTES) {
+        if (await probeStreamPromise) {
+          sttForward.current = false;
+          try {
+            s = sanitizeTranscript(await nova().sttStreamStop());
+          } catch {
+            s = "";
+            abortSttStream(); // never leak a recognizer into the resume path
+          }
+        }
+        if (!s && probe && probe.blob.size >= MIN_SPEECH_BLOB_BYTES) {
           try {
             const t = await nova().transcribe(
               {
@@ -723,16 +792,25 @@ export function useVoice(): {
         dispatch({ type: "responseDelta", delta: toSay });
         const resumeSpeaker = player.current.playStreaming(ttsOptions());
         resumeSpeaker.feed(toSay);
+        // Re-arm barge-in for the resumed playback: without this, a kill word
+        // (or any interrupt) spoken while the resumed reply plays fell on deaf
+        // ears until the next listen window — the second half of the "keeps
+        // going after I said stop" bug. Resetting bargeCommitted lets onBarge
+        // run again for this playback; the finishTurn below is skipped when a
+        // re-barge commits so the interrupt path owns the turn from there.
+        bargeCommitted = false;
+        armBarge();
         try {
           await resumeSpeaker.finish();
         } catch {
           // best effort — still settle below either way
         }
+        barge?.stop();
         if (cancelled) {
           dispatch({ type: "dismiss" });
           return;
         }
-        finishTurn();
+        if (!bargeCommitted) finishTurn();
       }
 
       let firstDelta = true;

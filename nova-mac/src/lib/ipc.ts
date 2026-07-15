@@ -1,6 +1,8 @@
 import type { AuthState } from "@shared/types";
 
 export interface NovaBridge {
+  /** OS the main process runs on ("darwin" | "win32" | "linux"). Static. */
+  platform: NodeJS.Platform;
   ping(): Promise<string>;
   authStatus(): Promise<AuthState>;
   authSignIn(email: string): Promise<void>;
@@ -79,6 +81,23 @@ export interface NovaBridge {
   personalityAdd(text: string): Promise<import("@shared/types").PersonalityTrait>;
   personalityUpdate(req: { id: string; text: string }): Promise<boolean>;
   personalityDelete(id: string): Promise<boolean>;
+  skillsList(): Promise<import("@shared/types").CustomSkill[]>;
+  skillsCreate(req: {
+    name: string;
+    triggers: string[];
+    actions: import("@shared/types").SkillAction[];
+    enabled?: boolean;
+  }): Promise<import("@shared/types").CustomSkill>;
+  skillsUpdate(req: {
+    id: string;
+    name?: string;
+    triggers?: string[];
+    actions?: import("@shared/types").SkillAction[];
+    enabled?: boolean;
+  }): Promise<import("@shared/types").CustomSkill | null>;
+  skillsDelete(id: string): Promise<boolean>;
+  skillsRun(id: string): Promise<unknown>;
+  skillsPickPath(): Promise<string | null>;
   memorySearch(req: unknown): Promise<unknown>;
   memoryPin(req: unknown): Promise<void>;
   memoryArchive(req: unknown): Promise<void>;

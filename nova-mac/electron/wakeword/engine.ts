@@ -42,6 +42,22 @@ export class WakeWordEngine {
     this.wake = await ort.InferenceSession.create(join(this.modelsDir, "hey_jarvis_v0.1.onnx"));
   }
 
+  /** Clear all rolling scoring state (audio ring, STFT context, mel/embedding
+   *  windows). Must run whenever scoring resumes after a pause: the embedding
+   *  window spans ~1.3s and is never naturally flushed while frames are
+   *  dropped, so on resume it still holds the "hey jarvis" that STARTED the
+   *  paused turn — the first predictions score that stale phrase and re-fire
+   *  immediately (the "re-activated right after a kill word" bug). A reset
+   *  also gives a natural cooldown: no score is produced until the embedding
+   *  window refills (~1.3s of genuinely new audio). */
+  reset(): void {
+    this.ring.reset();
+    this.melWindow.reset();
+    this.embWindow.reset();
+    this.melContext = new Float32Array(MEL_CONTEXT_SAMPLES);
+    this.embStep = 0;
+  }
+
   /** Push one ~80ms Int16 frame; returns a wake score when a full prediction window is ready. */
   async process(frame: Int16Array): Promise<number | null> {
     this.ring.pushInt16(frame);

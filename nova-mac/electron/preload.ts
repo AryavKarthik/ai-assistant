@@ -2,6 +2,9 @@ import { contextBridge, ipcRenderer } from "electron";
 import { AuthState, IpcChannel } from "@shared/types";
 
 contextBridge.exposeInMainWorld("nova", {
+  // Static — lets the renderer adapt copy/shortcut labels per OS without an
+  // IPC round-trip ("darwin" | "win32" | "linux").
+  platform: process.platform,
   ping: () => ipcRenderer.invoke(IpcChannel.Ping),
   authStatus: () => ipcRenderer.invoke(IpcChannel.AuthStatus),
   authSignIn: (email: string) => ipcRenderer.invoke(IpcChannel.AuthSignIn, email),
@@ -113,6 +116,12 @@ contextBridge.exposeInMainWorld("nova", {
   personalityAdd: (text: string) => ipcRenderer.invoke(IpcChannel.PersonalityAdd, text),
   personalityUpdate: (req: unknown) => ipcRenderer.invoke(IpcChannel.PersonalityUpdate, req),
   personalityDelete: (id: string) => ipcRenderer.invoke(IpcChannel.PersonalityDelete, id),
+  skillsList: () => ipcRenderer.invoke(IpcChannel.SkillsList),
+  skillsCreate: (req: unknown) => ipcRenderer.invoke(IpcChannel.SkillsCreate, req),
+  skillsUpdate: (req: unknown) => ipcRenderer.invoke(IpcChannel.SkillsUpdate, req),
+  skillsDelete: (id: string) => ipcRenderer.invoke(IpcChannel.SkillsDelete, id),
+  skillsRun: (id: string) => ipcRenderer.invoke(IpcChannel.SkillsRun, id),
+  skillsPickPath: () => ipcRenderer.invoke(IpcChannel.SkillsPickPath),
   memorySearch: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemorySearch, req),
   memoryPin: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryPin, req),
   memoryArchive: (req: unknown) => ipcRenderer.invoke(IpcChannel.MemoryArchive, req),

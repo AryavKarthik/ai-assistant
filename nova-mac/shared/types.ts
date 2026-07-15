@@ -92,6 +92,12 @@ export enum IpcChannel {
   PersonalityAdd = "personality:add",
   PersonalityUpdate = "personality:update",
   PersonalityDelete = "personality:delete",
+  SkillsList = "skills:list",
+  SkillsCreate = "skills:create",
+  SkillsUpdate = "skills:update",
+  SkillsDelete = "skills:delete",
+  SkillsRun = "skills:run",
+  SkillsPickPath = "skills:pickPath",
 }
 
 export interface AuthState {
@@ -356,6 +362,22 @@ export interface PersonalityTrait {
   createdAt: string;
   /** "chat" = learned from feedback mid-conversation; "manual" = added in Settings. */
   source: "chat" | "manual";
+}
+
+export type SkillAction =
+  | { type: "open_path"; path: string }
+  | { type: "open_app"; app_name: string }
+  | { type: "open_url"; url: string }
+  | { type: "run_shortcut"; name: string; input?: string };
+
+export interface CustomSkill {
+  id: string;
+  name: string;
+  triggers: string[];
+  actions: SkillAction[];
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type GoogleService = "calendar" | "gmail" | "youtube";

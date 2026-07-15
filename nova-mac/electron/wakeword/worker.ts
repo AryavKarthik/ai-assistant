@@ -17,8 +17,15 @@ let workerFrameCount = 0;
 // engine's sliding windows out of order — the temporal pattern the wake model
 // matches gets scrambled and "hey jarvis" scores land inconsistently low.
 let queue: Promise<void> = Promise.resolve();
-parentPort?.on("message", (msg: { type: string; buf: ArrayBuffer }) => {
-  if (msg.type !== "frame" || !ready) return;
+parentPort?.on("message", (msg: { type: string; buf?: ArrayBuffer }) => {
+  if (!ready) return;
+  if (msg.type === "reset") {
+    // Chain on the queue so the reset never lands mid-frame between the
+    // in-order ONNX runs of an in-flight process() call.
+    queue = queue.then(() => engine.reset()).catch(() => {});
+    return;
+  }
+  if (msg.type !== "frame" || !msg.buf) return;
   workerFrameCount++;
   const frame = new Int16Array(msg.buf);
   queue = queue

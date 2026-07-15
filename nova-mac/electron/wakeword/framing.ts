@@ -31,6 +31,10 @@ export class AudioRingBuffer {
   available(): number {
     return this.buf.length;
   }
+
+  reset(): void {
+    this.buf = [];
+  }
 }
 
 /** Fixed-size sliding window of equal-width vectors, flattened on output. */

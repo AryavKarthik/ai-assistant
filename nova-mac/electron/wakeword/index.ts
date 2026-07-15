@@ -81,7 +81,23 @@ export class WakeWordController {
     this.worker?.postMessage({ type: "frame", buf }, [buf]);
   }
 
-  setEnabled(on: boolean): void { this.enabled = on; }
+  /** Clear the worker's rolling scoring state. Without this, resuming after a
+   *  pause scores new audio against an embedding window that still holds the
+   *  wake phrase which started the turn — the engine re-fires on its own stale
+   *  audio the moment a kill word (or any turn end) resumes scoring. FIFO port
+   *  ordering guarantees the reset lands before any post-resume frame. */
+  private resetEngine(): void {
+    this.worker?.postMessage({ type: "reset" });
+  }
+
+  setEnabled(on: boolean): void {
+    if (on && !this.enabled) this.resetEngine();
+    this.enabled = on;
+  }
   pauseForTurn(): void { this.pausedForTurn = true; }
-  resume(): void { this.pausedForTurn = false; this.armed = true; }
+  resume(): void {
+    this.resetEngine();
+    this.pausedForTurn = false;
+    this.armed = true;
+  }
 }

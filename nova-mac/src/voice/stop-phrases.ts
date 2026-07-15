@@ -85,6 +85,58 @@ const VOICE_STOP_PHRASES = new Set([
   "im all good",
 ]);
 
+/** Dismissals unambiguous enough to end the conversation when they appear
+ *  ANYWHERE in the utterance — "thanks Jarvis, that will be all for today"
+ *  must end the turn even though the whole sentence is not an exact stop
+ *  phrase. Only phrases that essentially never occur mid-request belong here
+ *  (bare "stop"/"cancel" would swallow "stop the timer"). Apostrophes are
+ *  optional in the match so STT variants like "thatll be all" also hit. */
+const CONTAINED_STOP_PHRASES = [
+  "that will be all",
+  "that'll be all",
+  "that'd be all",
+  "that would be all",
+  "that should be all",
+  "that shall be all",
+  "that's all for now",
+  "that is all for now",
+  "stop listening",
+  "go to sleep",
+  "goodbye",
+  "good bye",
+  "bye bye",
+  "talk to you later",
+  "talk later",
+] as const;
+
+const CONTAINED_STOP_RE = new RegExp(
+  `\\b(?:${CONTAINED_STOP_PHRASES.map((p) => p.replace(/'/g, "'?")).join("|")})\\b`,
+);
+
+/** Dismissals that end the conversation when the utterance ENDS with them
+ *  (after trailing-filler stripping) — "okay great, that's enough" — but are
+ *  too common mid-sentence to match anywhere. */
+const END_ANCHORED_STOP_PHRASES = [
+  "that's all",
+  "that is all",
+  "that's it",
+  "that is it",
+  "that's enough",
+  "that is enough",
+  "i'm done",
+  "we're done",
+  "all done",
+  "i'm good",
+  "thank you very much",
+  "thanks very much",
+  "see you",
+  "see ya",
+] as const;
+
+const END_ANCHORED_STOP_RE = new RegExp(
+  `\\b(?:${END_ANCHORED_STOP_PHRASES.map((p) => p.replace(/'/g, "'?")).join("|")})$`,
+);
+
 const STOP_PREFIXES = [
   "that's all",
   "thats all",
@@ -108,6 +160,13 @@ function stripTrailingFiller(normalized: string): string {
   for (let i = 0; i < 3; i++) {
     const parts = current.split(" ");
     if (parts.length < 2) break;
+    // Two-word fillers ("very much", "so much", "for now") first, then single
+    // words — testing only the last word could never strip the two-word ones.
+    const lastTwo = parts.slice(-2).join(" ");
+    if (parts.length > 2 && TRAILING_FILLER.test(lastTwo)) {
+      current = parts.slice(0, -2).join(" ").trim();
+      continue;
+    }
     const last = parts[parts.length - 1] ?? "";
     if (!TRAILING_FILLER.test(last)) break;
     current = parts.slice(0, -1).join(" ").trim();
@@ -119,6 +178,7 @@ function matchesStop(candidate: string): boolean {
   if (VOICE_STOP_PHRASES.has(candidate)) return true;
   const stripped = stripTrailingFiller(candidate);
   if (stripped !== candidate && VOICE_STOP_PHRASES.has(stripped)) return true;
+  if (END_ANCHORED_STOP_RE.test(stripped)) return true;
   if (candidate.split(" ").length <= 6) {
     return STOP_PREFIXES.some((prefix) => stripped.startsWith(prefix));
   }
@@ -129,6 +189,10 @@ function matchesStop(candidate: string): boolean {
 export function isVoiceStopPhrase(text: string): boolean {
   const normalized = normalizeTranscriptText(text);
   if (!normalized) return false;
+
+  // Strong dismissals end the conversation no matter where they sit in the
+  // sentence — this is what makes "thanks, that will be all for today" work.
+  if (CONTAINED_STOP_RE.test(normalized)) return true;
 
   if (matchesStop(normalized)) return true;
 
