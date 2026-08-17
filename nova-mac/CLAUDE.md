@@ -418,6 +418,18 @@ token, upserts row, sends `IpcChannel.ConnectionsCallback` **with a
 swallowed — it now maps to a hint telling the user to add themselves as a Test user /
 publish the app and enable the Gmail+Calendar APIs in console.cloud.google.com.
 
+**Token use** (`electron/google/auth-client.ts`): `getAuthenticatedOAuth2` caches one
+authenticated client per user and reuses it until the access token nears expiry, with
+concurrent callers single-flighted into one refresh grant. This is load-bearing, not an
+optimization: every consumer (30s proactive scheduler tick, `preRetrieveContext`, each tool
+call) funnels through it, and Google rotates refresh tokens on refresh — two uncached
+concurrent refresh grants with the same token race, the loser gets `invalid_grant`, and the
+user sees "calendar's not linked" while the stored token is perfectly valid (this happened).
+Rotated tokens are persisted via the `tokens` event *and* mirrored into the cache entry so
+the row-vs-cache comparison stays fresh; on `invalid_grant` the row is re-read once (another
+writer — e.g. the web app — may have persisted a newer token) before failing with
+`GOOGLE_AUTH_EXPIRED`.
+
 **One-time setup**: add `nova://connections-callback` as an authorized redirect URI in your
 Google OAuth 2.0 client at console.cloud.google.com. Requires `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`, and `GOOGLE_TOKEN_ENCRYPTION_KEY` (32-byte key) in `.env.local`.

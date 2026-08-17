@@ -8,6 +8,8 @@ export const YOUTUBE_NOT_CONNECTED =
   "YouTube not linked. Connect at /connections.";
 export const YOUTUBE_MISSING_SCOPE_ERROR =
   "YouTube is connected but missing permission. Reconnect YouTube in Connections to re-consent.";
+export const GOOGLE_AUTH_EXPIRED =
+  "Google authorization expired or was revoked. Reconnect Google in the Connections tab.";
 
 export function isInsufficientScopeError(message: string): boolean {
   return /insufficient authentication scopes/i.test(message);
