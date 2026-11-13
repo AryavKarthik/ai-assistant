@@ -94,7 +94,11 @@ export class SpeechGate {
    *  must compare against this, NOT activeThreshold — keying silence off the
    *  full threshold cuts the user off mid-trail-off. */
   releaseThreshold(): number {
-    return this.activeThreshold * 0.72;
+    // Never below the ambient floor. 72% of the trigger alone could land
+    // UNDER the room's own noise (fan, PC hum, AGC boosting the quiet), so the
+    // room itself counted as "still talking" and recording ran to the 30s cap
+    // after the user had finished ("keeps listening long after I stop").
+    return Math.max(this.activeThreshold * 0.72, this.noiseFloor + this.noiseMargin * 0.5);
   }
 
   reset(): void {

@@ -406,6 +406,7 @@ app.whenReady().then(async () => {
 
   const wake = new WakeWordController(modelsDir);
   wake.start(() => {
+    console.log(`[voice ${new Date().toISOString().slice(11, 23)}] wake detected`);
     wake.pauseForTurn(); // stop ingesting frames during the voice turn
     activateOrb(); // pop the mini orb in; auto-hides once the turn settles
     // Prewarm the turn pipeline (auth/conversation/timezone caches) while the
@@ -427,7 +428,9 @@ app.whenReady().then(async () => {
     async (_e, req: import("@shared/types").SttStreamStartRequest) => {
       if (!req?.sampleRateHertz) return false;
       const m = await loadSttStream();
-      return m.startSttStream(req.sampleRateHertz);
+      const ok = await m.startSttStream(req.sampleRateHertz);
+      console.log(`[voice ${new Date().toISOString().slice(11, 23)}] stt stream start ok=${ok}`);
+      return ok;
     },
   );
   ipcMain.on(IpcChannel.SttStreamAudio, (_e, buf: ArrayBuffer) => {
@@ -436,7 +439,10 @@ app.whenReady().then(async () => {
   ipcMain.handle(IpcChannel.SttStreamStop, async () => {
     if (!sttStream && !sttStreamLoading) return "";
     const m = await loadSttStream();
-    return m.stopSttStream();
+    const t = Date.now();
+    const text = await m.stopSttStream();
+    console.log(`[voice ${new Date().toISOString().slice(11, 23)}] stt stream final after ${Date.now() - t}ms chars=${text.length}`);
+    return text;
   });
   ipcMain.on(IpcChannel.SttStreamAbort, () => {
     if (sttStream) {

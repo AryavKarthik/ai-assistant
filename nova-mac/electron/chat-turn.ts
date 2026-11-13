@@ -195,6 +195,7 @@ export async function streamTurn(
   // Per-turn timing, logged on completion as one line — the only way to see
   // where a slow reply's seconds actually went (prep vs. model vs. tools).
   const t0 = Date.now();
+  console.log(`[voice ${new Date(t0).toISOString().slice(11, 23)}] chat turn start (${isVoice ? "voice" : "text"})`);
   const timing: string[] = [];
   const mark = (label: string, since: number) => timing.push(`${label}=${Date.now() - since}ms`);
 

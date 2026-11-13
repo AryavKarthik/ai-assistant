@@ -243,10 +243,15 @@ wake word fires (main)  ──activateOrb + IPC WakeDetected──▶  useVoice.
   probe's recorder starts. Batch-only probing heard silence, judged the interrupt a false
   alarm, and RESUMED the reply + re-listened — "keeps listening/talking after I said stop".
   The ring (12 × 80ms ≈ 1s of native-rate PCM, sized to cover listener hold + stream-start
-  latency) is the only place the interrupting utterance still exists. The resume path also
-  re-arms the barge listener (resetting `bargeCommitted`, with `finishTurn` guarded on it) so
-  an interrupt during the *resumed* playback is heard too, instead of falling dead until the
-  next listen window.
+  latency) is the only place the interrupting utterance still exists. The resume path does
+  NOT re-arm the barge listener: a false alarm is usually Nova's own voice leaking from the
+  speakers into the mic, and re-arming let that echo re-trigger on the resumed audio, replaying
+  the whole reply in an endless loop (seen on Windows without headphones).
+- **End of speech**: `SpeechGate.releaseThreshold()` is floored at `noiseFloor + margin/2` (72% of
+  the trigger alone could sit below a noisy room's own level), and `recordUntilSilence` ends
+  once nothing at trigger loudness is heard for `silenceMs + 1.2s` after speech is confirmed.
+  Without both, room noise / mic auto-gain held recording open to the 30s cap after the user
+  had finished. Voice steps log timestamped `[voice …]` lines (wake, STT, TTS, chat start).
 - **Kill words / noise filtering** (`src/voice/stop-phrases.ts`, `transcript-filter.ts`,
   ported from the web app): every transcript from `recordUntilSilence` is run through
   `sanitizeTranscript()` in `useVoice.ts` before it ever reaches Claude. An empty result means

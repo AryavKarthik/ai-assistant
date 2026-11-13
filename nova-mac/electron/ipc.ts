@@ -82,7 +82,19 @@ export function registerIpcHandlers(handlers: IpcHandlers): void {
   ipcMain.handle(IpcChannel.AuthSignOut, () => handlers.authSignOut());
   ipcMain.handle(IpcChannel.SyncConversations, () => handlers.syncConversations());
   ipcMain.handle(IpcChannel.SyncMemories, () => handlers.syncMemories());
-  ipcMain.handle(IpcChannel.VoiceTranscribe, (_e, req, provider) => handlers.transcribe(req, provider));
-  ipcMain.handle(IpcChannel.VoiceSynthesize, (_e, req) => handlers.synthesize(req));
+  // Voice-pipeline timing (timestamped so gaps between steps are readable).
+  const vts = () => new Date().toISOString().slice(11, 23);
+  ipcMain.handle(IpcChannel.VoiceTranscribe, async (_e, req, provider) => {
+    const t = Date.now();
+    const text = await handlers.transcribe(req, provider);
+    console.log(`[voice ${vts()}] batch transcribe (${provider}) ${Date.now() - t}ms chars=${text.length}`);
+    return text;
+  });
+  ipcMain.handle(IpcChannel.VoiceSynthesize, async (_e, req) => {
+    const t = Date.now();
+    const out = await handlers.synthesize(req);
+    console.log(`[voice ${vts()}] tts (${req?.provider ?? "openai"}) ${Date.now() - t}ms chars=${req?.text?.length ?? 0}`);
+    return out;
+  });
   ipcMain.handle(IpcChannel.VoiceGetPreferences, () => handlers.getVoicePreferences());
 }

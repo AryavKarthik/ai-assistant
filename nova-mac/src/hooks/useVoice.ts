@@ -117,6 +117,7 @@ async function recordUntilSilence(
     // room with intermittent noise (each blip refreshing lastLoudAt) kept the
     // listen open way past the configured give-up time.
     let lastLoudAt = 0;
+    let lastStrongAt = 0;
     let deadlineExtensions = 0;
     function onNoSpeechDeadline() {
       if (gate.confirmed) return;
@@ -141,6 +142,16 @@ async function recordUntilSilence(
       // timer while the user was still finishing their sentence — the "cuts
       // off the end of what I say" bug.
       const sounding = level >= (gate.confirmed ? gate.releaseThreshold() : gate.activeThreshold);
+      // Backstop for noisy rooms / mic auto-gain: once speech is confirmed,
+      // if nothing at real-speech loudness (the trigger threshold) has been
+      // heard for silenceMs + 1.2s, the user is done — even if ambient noise
+      // keeps hovering in the softer release band and holds `sounding` true.
+      // Trailing-off words still get the release band for that grace period.
+      if (level >= gate.activeThreshold) lastStrongAt = Date.now();
+      if (gate.confirmed && lastStrongAt && Date.now() - lastStrongAt >= options.silenceMs + 1200) {
+        finish();
+        return;
+      }
       if (sounding) {
         lastLoudAt = Date.now();
         if (silenceTimer !== null) {
@@ -861,14 +872,15 @@ export function useVoice(): {
         dispatch({ type: "responseDelta", delta: toSay });
         const resumeSpeaker = player.current.playStreaming(ttsOptions());
         resumeSpeaker.feed(toSay);
-        // Re-arm barge-in for the resumed playback: without this, a kill word
-        // (or any interrupt) spoken while the resumed reply plays fell on deaf
-        // ears until the next listen window — the second half of the "keeps
-        // going after I said stop" bug. Resetting bargeCommitted lets onBarge
-        // run again for this playback; the finishTurn below is skipped when a
-        // re-barge commits so the interrupt path owns the turn from there.
+        // Barge-in is deliberately NOT re-armed for this resumed playback.
+        // Reaching this path means the interrupt was a false alarm, and that
+        // is usually Nova's OWN voice leaking from the speakers into the mic
+        // (no headphones). Re-arming let the echo trigger again on the resumed
+        // audio, which replayed the whole reply again, endlessly: seen in logs
+        // as the same TTS clips repeating with a 1.5s probe between each.
+        // Replies are 1-2 sentences, so losing interrupts (kill words
+        // included) for this one replay is the cheaper trade.
         bargeCommitted = false;
-        armBarge();
         try {
           await resumeSpeaker.finish();
         } catch {
