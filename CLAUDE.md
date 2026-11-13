@@ -109,7 +109,7 @@ Supabase RPCs: `search_memories_by_vector`, `increment_memory_access` (defined i
 
 ## Environment variables
 
-See `README.md` for the full list. Minimum for local dev: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Voice and Google integrations need additional keys.
+See `docs/DEVELOPMENT.md` for the full list. Minimum for local dev: `ANTHROPIC_API_KEY`, `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`. Voice and Google integrations need additional keys.
 
 **Important:** Do not paste multi-line GCP service account JSON into `.env.local` — save it to `gcp-service-account.json` and set `GOOGLE_APPLICATION_CREDENTIALS=./gcp-service-account.json` instead.
 

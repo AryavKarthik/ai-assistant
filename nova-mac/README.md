@@ -1,6 +1,8 @@
-# Nova — native macOS companion
+# Nova desktop companion (macOS & Windows)
 
 A tray-only Electron app that brings the Nova AI assistant to your desktop as an always-on-top voice orb. Say "Hey Jarvis" (or press `Cmd+Shift+Space`) to start a conversation. Open the full app window from the tray for settings, reminders, memory, and Google account connections.
+
+> Part of the [Nova project](../README.md). This folder is the Electron desktop app; the repo root is the Next.js web app.
 
 Shares the same Supabase backend (auth, conversations, memories, preferences) as the Nova web app.
 
