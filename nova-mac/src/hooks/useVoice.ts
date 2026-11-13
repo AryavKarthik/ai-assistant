@@ -550,7 +550,7 @@ export function useVoice(): {
             // promptly when you're actually done, without cutting off a first
             // wake utterance.
             noSpeechTimeoutMs:
-              opts?.noSpeechMs ?? (opts?.followup ? 4000 : prefs.current.noSpeechTimeoutMs),
+              opts?.noSpeechMs ?? (opts?.followup ? 3000 : prefs.current.noSpeechTimeoutMs),
             // Warm calibration: reuse the noise floor measured last turn so
             // the gate doesn't spend its calibration window re-learning the
             // same room (and can't be fooled by calibrating mid-sentence).
@@ -579,12 +579,13 @@ export function useVoice(): {
       }
 
       // Too small to be real speech (gate never confirmed, or a split-second
-      // blip): treat as silence. In conversation mode a quiet gap between
-      // exchanges is normal — quietly listen again instead of erroring out of
-      // the conversation.
+      // blip): treat as silence. Right after "Hey Jarvis" one quiet retry is
+      // allowed (people pause before asking). After a reply (followup) silence
+      // means they're done — it used to re-listen up to twice more, leaving
+      // the orb listening ~12s after the conversation had clearly ended.
       if (audio.size < MIN_SPEECH_BLOB_BYTES) {
         abortSttStream();
-        if (consecutiveNoiseTurns.current < 2) {
+        if (!opts?.followup && consecutiveNoiseTurns.current < 1) {
           // A blip or a quiet gap — listen again rather than bailing.
           consecutiveNoiseTurns.current++;
           void runTurn({ followup: true });
@@ -658,9 +659,9 @@ export function useVoice(): {
       // all", "thank you very much", ...) before ever calling Claude.
       const sanitized = sanitizeTranscript(transcript);
       if (!sanitized) {
-        // Noise/hallucination, not real speech — listen again rather than
-        // dropping the conversation.
-        if (consecutiveNoiseTurns.current < 2) {
+        // Noise/hallucination, not real speech — listen again once rather
+        // than dropping the conversation.
+        if (consecutiveNoiseTurns.current < 1) {
           consecutiveNoiseTurns.current++;
           void runTurn({ followup: true });
           return;
