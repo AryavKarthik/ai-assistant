@@ -68,9 +68,13 @@ async function recordUntilSilence(
   const analyser = new MicAnalyser();
   const gate = new SpeechGate({
     minThreshold: options.threshold,
-    // 260ms of sustained speech confirms — long enough to reject door slams
-    // and keyboard clatter, short enough not to eat the first word.
-    speechHoldMs: 260,
+    // 320ms of sustained speech, 0.075 above the room's floor, confirms.
+    // Was 260ms / 0.055: in a noisy room (PC fan, TV, mic auto-gain) steady
+    // background noise cleared that bar and got recorded as "speech". Still
+    // short enough not to eat the first word; Settings → Listening
+    // sensitivity raises/lowers the minimum threshold on top of this.
+    speechHoldMs: 320,
+    noiseMargin: 0.075,
     // Must outlive the silence window. The gate's default decay (2s) cleared
     // confirmed() BEFORE a silenceMs ≥ 2000 timer fired; a single ambient blip
     // after that cleared the silence timer, and with confirmed gone nothing
@@ -721,6 +725,8 @@ export function useVoice(): {
       // Once a barge-in commits to a new turn (or a stop phrase), the original
       // turn's completion path must not also end/re-listen.
       let bargeCommitted = false;
+      /** The reply's audio has fully played (see the false-alarm path). */
+      let speakerDone = false;
       let barge: TtsBargeInListener | null = null;
 
       function armBarge() {
@@ -761,9 +767,12 @@ export function useVoice(): {
         if (bargeCommitted) return;
         bargeCommitted = true;
         barge?.stop();
-        cleanupListeners();
-        player.current.stop();
-        nova().chatCancel(id);
+        // PAUSE, don't stop: the reply keeps streaming and synthesizing in the
+        // background while we listen. A false alarm (usually Nova's own voice
+        // or room noise reaching the mic) then just un-pauses mid-sentence.
+        // Stopping here meant the only way back was replaying the whole reply
+        // from the start, which is what users heard as it "restarting".
+        await player.current.suspendPlayback();
         cue("bargeIn");
         dispatch({ type: "bargeIn" });
 
@@ -843,6 +852,12 @@ export function useVoice(): {
         }
 
         if (superseded()) return;
+        if (s) {
+          // Real speech: abandon the paused reply for good.
+          cleanupListeners();
+          player.current.stop();
+          nova().chatCancel(id);
+        }
         if (s && !isVoiceStopPhrase(s)) {
           // Real interruption — dispatch stays orange until submit flips it to
           // processing inside startReply.
@@ -858,41 +873,27 @@ export function useVoice(): {
           return;
         }
 
-        // False alarm — no real follow-up (silence or just noise). Resume
-        // speaking the reply instead of dropping it.
-        const toSay = replyText.trim();
-        if (!toSay || !prefs.current.spokenReplies) {
-          dispatch({ type: "dismiss" });
-          endTurn();
-          return;
-        }
-        // bargeIn → processing → responding, via the same transitions a fresh
-        // reply uses (see the note above onBarge).
-        dispatch({ type: "submit", transcript });
-        dispatch({ type: "responseStart" });
-        dispatch({ type: "responseDelta", delta: toSay });
-        const resumeSpeaker = player.current.playStreaming(ttsOptions());
-        resumeSpeaker.feed(toSay);
-        // Barge-in is deliberately NOT re-armed for this resumed playback.
-        // Reaching this path means the interrupt was a false alarm, and that
-        // is usually Nova's OWN voice leaking from the speakers into the mic
-        // (no headphones). Re-arming let the echo trigger again on the resumed
-        // audio, which replayed the whole reply again, endlessly: seen in logs
-        // as the same TTS clips repeating with a 1.5s probe between each.
-        // Replies are 1-2 sentences, so losing interrupts (kill words
-        // included) for this one replay is the cheaper trade.
-        bargeCommitted = false;
-        try {
-          await resumeSpeaker.finish();
-        } catch {
-          // best effort — still settle below either way
-        }
-        barge?.stop();
+        // False alarm — no real follow-up (silence or just noise). Un-pause
+        // and carry on from exactly where it stopped; the reply never stopped
+        // streaming, so nothing is lost or repeated.
         if (cancelled) {
           dispatch({ type: "dismiss" });
           return;
         }
-        if (!bargeCommitted) finishTurn();
+        await player.current.resumePlayback();
+        if (superseded()) return;
+        // bargeIn → processing → responding, via the same transitions a fresh
+        // reply uses (see the note above onBarge).
+        dispatch({ type: "submit", transcript });
+        dispatch({ type: "responseStart" });
+        if (replyText) dispatch({ type: "responseDelta", delta: replyText });
+        // Barge-in is deliberately NOT re-armed for the rest of this reply:
+        // a false alarm usually means Nova's OWN voice leaks into the mic (no
+        // headphones), and re-arming let it trigger over and over.
+        bargeCommitted = false;
+        // If the audio already finished during the pause, the normal
+        // completion path skipped finishTurn (bargeCommitted was true) — run it.
+        if (speakerDone) finishTurn();
       }
 
       let firstDelta = true;
@@ -938,6 +939,7 @@ export function useVoice(): {
         cleanupListeners();
         if (currentSpeaker) {
           void currentSpeaker.finish().then(() => {
+            speakerDone = true;
             barge?.stop();
             if (!bargeCommitted) finishTurn();
           });
