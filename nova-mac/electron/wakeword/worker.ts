@@ -31,7 +31,7 @@ parentPort?.on("message", (msg: { type: string; buf?: ArrayBuffer }) => {
   queue = queue
     .then(async () => {
       const score = await engine.process(frame);
-      if (workerFrameCount % 100 === 0) console.log("[nova] worker processed frames:", workerFrameCount, "last score:", score);
+      if (workerFrameCount % 5000 === 0) console.log("[nova] worker processed frames:", workerFrameCount, "last score:", score);
       if (score != null) parentPort?.postMessage({ type: "score", score });
     })
     .catch((err: unknown) => {

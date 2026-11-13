@@ -138,6 +138,10 @@ only a timer notice auto-expands (`hasNotice` effect in `src/App.tsx`), collapsi
 ~2.5s after the notice clears. The reducer's `settle` event ends a turn while keeping the
 conversation text visible in the panel; typed messages go through `useVoice().sendText` (no
 TTS, no barge-in) so replies stream in even when opened manually.
+A typed send while a voice turn is busy (listening, speaking, or the ~4s follow-up re-listens
+after a reply) calls `interruptForText()`: it bumps `voiceEpoch` so every in-flight voice step
+bows out silently, aborts recording (`recordUntilSilence`'s `signal`), stops playback and
+`chatCancel`s the active request. It used to `return` instead, silently dropping the typed text.
 
 **Links in replies**: reply text in the orb panel is rendered through `linkifyText`
 (`src/lib/linkify.tsx`) so URLs are clickable, and `openLinksExternally` in `window.ts`
@@ -393,6 +397,10 @@ that had actually failed.
   userId/conversation/timezone caches while the user is still speaking
 - Voice turns route through `inferComplexity` like text (no longer pinned to the light model)
 - **Never `select("embedding")`** — memory queries always use an explicit column list
+- Every turn logs one `[turn]` line: setup/prep ms, then per model call `first_text`, `total`,
+  `stop`, tools, and `in`/`cache_read`/`cache_write`/`out` tokens — read it before guessing at latency.
+- Typed replies render as PLAIN TEXT in the orb bubble (only URLs linkify), so `TEXT_REPLY_PROMPT`
+  bans markdown and defaults to 1–3 sentences; voice gets `VOICE_REPLY_PROMPT` only (no text rules).
 
 ## App window — tabs (`src/AppShell.tsx`)
 

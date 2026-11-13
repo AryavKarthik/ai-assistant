@@ -49,6 +49,8 @@ async function recordUntilSilence(
     threshold: number;
     noSpeechTimeoutMs: number;
     initialNoiseFloor?: number;
+    /** Ends recording immediately (e.g. the user started typing instead). */
+    signal?: AbortSignal;
   },
   onLevel: (level: number) => void,
 ): Promise<RecordResult> {
@@ -127,6 +129,8 @@ async function recordUntilSilence(
     }
     let noSpeechTimer = setTimeout(onNoSpeechDeadline, options.noSpeechTimeoutMs);
     const maxTimer = setTimeout(finish, MAX_RECORDING_MS);
+    if (options.signal?.aborted) queueMicrotask(finish);
+    else options.signal?.addEventListener("abort", finish, { once: true });
 
     analyser.start(stream, (level) => {
       onLevel(level);
@@ -199,6 +203,16 @@ export function useVoice(): {
     // StrictMode cycle gets its own independent flag.
     let cancelled = false;
     let stopWake: (() => void) | null = null;
+    // Typed messages take over from voice. A voice conversation (listen →
+    // reply → re-listen for a follow-up, ~4s each, up to 3 quiet re-listens)
+    // keeps busyRef true for a long stretch after Jarvis answers; the send
+    // button used to just `return` then, silently dropping the typed text
+    // ("the button doesn't work"). interruptForText() bumps voiceEpoch so every
+    // in-flight voice step sees it is stale and bows out without dispatching
+    // or re-listening, and stops whatever is recording/streaming/speaking.
+    let voiceEpoch = 0;
+    let recordAbort: AbortController | null = null;
+    let activeChatId: string | null = null;
 
     function cue(name: Parameters<typeof playCue>[0]) {
       if (prefs.current.audioCuesEnabled !== false) playCue(name);
@@ -310,6 +324,7 @@ export function useVoice(): {
       }
       const next = announceQueue.shift();
       if (!next) return;
+      const epoch = voiceEpoch;
       announcing = true;
       busyRef.current = true;
       let spoke = false;
@@ -326,7 +341,10 @@ export function useVoice(): {
           }
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && epoch !== voiceEpoch) {
+          // A typed message took over mid-announcement; it owns the orb now.
+          announcing = false;
+        } else if (!cancelled) {
           dispatch({ type: "announceEnd" });
           announcing = false;
           busyRef.current = false;
@@ -374,8 +392,26 @@ export function useVoice(): {
 
     // Typed chat turn: no recording, no TTS, no barge-in — just stream the reply
     // into the panel.
+    function interruptForText() {
+      voiceEpoch++;
+      recordAbort?.abort();
+      recordAbort = null;
+      cleanupTurn.current?.();
+      cleanupTurn.current = null;
+      player.current.stop();
+      if (activeChatId) {
+        nova().chatCancel(activeChatId);
+        activeChatId = null;
+      }
+      abortSttStream();
+      setLevel(0);
+      busyRef.current = false;
+      // Re-arms wake scoring that the voice turn paused.
+      nova().voiceTurnEnded();
+    }
+
     function runTextTurn(text: string) {
-      if (busyRef.current) return;
+      if (busyRef.current) interruptForText();
       busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
@@ -383,6 +419,7 @@ export function useVoice(): {
       dispatch({ type: "summon" });
       dispatch({ type: "submit", transcript: text });
       const id = `text-${++reqId.current}`;
+      activeChatId = id;
 
       // responseStart waits for the first streamed token: "processing"
       // (purple) is the visible state while Claude is thinking, and
@@ -419,6 +456,7 @@ export function useVoice(): {
         offDone();
         offErr();
         cleanupTurn.current = null;
+        if (activeChatId === id) activeChatId = null;
       }
       cleanupTurn.current = cleanup;
 
@@ -445,6 +483,9 @@ export function useVoice(): {
       busyRef.current = true;
       cleanupTurn.current?.();
       cleanupTurn.current = null;
+      const epoch = voiceEpoch;
+      /** A typed message took over: bow out silently (it owns the orb now). */
+      const superseded = () => epoch !== voiceEpoch;
 
       dispatch({ type: "summon" });
 
@@ -452,6 +493,7 @@ export function useVoice(): {
       try {
         stream = await mic.current.acquire();
       } catch {
+        if (superseded()) return;
         showError("Mic unavailable");
         endTurn();
         return;
@@ -460,6 +502,7 @@ export function useVoice(): {
         dispatch({ type: "dismiss" });
         return;
       }
+      if (superseded()) return;
 
       // Kick off streaming STT concurrently (don't delay the VAD/recorder):
       // the capture worklet's native-rate PCM frames stream to Google so
@@ -484,6 +527,8 @@ export function useVoice(): {
       })();
 
       let recording: RecordResult;
+      const abort = new AbortController();
+      recordAbort = abort;
       try {
         recording = await recordUntilSilence(
           stream,
@@ -499,15 +544,20 @@ export function useVoice(): {
             // the gate doesn't spend its calibration window re-learning the
             // same room (and can't be fooled by calibrating mid-sentence).
             initialNoiseFloor: mic.current.getNoiseFloor() || undefined,
+            signal: abort.signal,
           },
           (l) => setLevel(l),
         );
       } catch {
+        if (recordAbort === abort) recordAbort = null;
+        if (superseded()) return;
         abortSttStream();
         showError("Recording failed");
         endTurn();
         return;
       }
+      if (recordAbort === abort) recordAbort = null;
+      if (superseded()) return;
       mic.current.rememberNoiseFloor(recording.noiseFloor);
       const audio = recording.blob;
       setLevel(0);
@@ -561,11 +611,13 @@ export function useVoice(): {
             prefs.current.sttProvider,
           );
         } catch {
+          if (superseded()) return;
           showError("Transcription failed");
           endTurn();
           return;
         }
       }
+      if (superseded()) return;
 
       if (!transcript) {
         // Quiet end — no "nothing heard" error.
@@ -644,6 +696,9 @@ export function useVoice(): {
       // earlier note on React batching blue→purple→green.
       dispatch({ type: "submit", transcript });
       const id = `turn-${++reqId.current}`;
+      activeChatId = id;
+      const epoch = voiceEpoch;
+      const superseded = () => epoch !== voiceEpoch;
 
       const currentSpeaker = prefs.current.spokenReplies
         ? player.current.playStreaming(ttsOptions())
@@ -665,6 +720,10 @@ export function useVoice(): {
       }
 
       function finishTurn() {
+        if (activeChatId === id) activeChatId = null;
+        // A typed message took over (it stopped playback, which resolves the
+        // speaker's finish()) — don't settle its state or start re-listening.
+        if (superseded()) return;
         dispatch({ type: "settle" });
         // Keep the conversation flowing: after every reply, listen for a
         // follow-up. "Hey Jarvis" opens the conversation; it stays open
@@ -683,6 +742,10 @@ export function useVoice(): {
       // bargeIn (skipping submit) is a no-op in the reducer and is what froze
       // the orb orange in an earlier version of this.
       async function onBarge() {
+        if (superseded()) {
+          barge?.stop();
+          return;
+        }
         if (bargeCommitted) return;
         bargeCommitted = true;
         barge?.stop();
@@ -715,6 +778,8 @@ export function useVoice(): {
         })();
 
         let probe: RecordResult | null = null;
+        const probeAbort = new AbortController();
+        recordAbort = probeAbort;
         try {
           probe = await recordUntilSilence(
             stream,
@@ -723,12 +788,15 @@ export function useVoice(): {
               threshold: speechThreshold(prefs.current.listeningSensitivity),
               noSpeechTimeoutMs: 1500,
               initialNoiseFloor: mic.current.getNoiseFloor() || undefined,
+              signal: probeAbort.signal,
             },
             (l) => setLevel(l),
           );
         } catch {
           probe = null;
         }
+        if (recordAbort === probeAbort) recordAbort = null;
+        if (superseded()) return;
         setLevel(0);
         if (cancelled) {
           abortSttStream();
@@ -762,6 +830,7 @@ export function useVoice(): {
           }
         }
 
+        if (superseded()) return;
         if (s && !isVoiceStopPhrase(s)) {
           // Real interruption — dispatch stays orange until submit flips it to
           // processing inside startReply.

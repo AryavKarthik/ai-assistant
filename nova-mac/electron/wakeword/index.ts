@@ -56,7 +56,7 @@ export class WakeWordController {
     this.worker.on("message", (msg: { type: string; score?: number }) => {
       if (msg.type === "ready") { console.log("[nova] wake engine ready"); return; }
       if (msg.type !== "score" || msg.score == null) return;
-      if (msg.score > 0.001) console.log("[nova] wake score", msg.score.toFixed(4));
+      if (msg.score > 0.1) console.log("[nova] wake score", msg.score.toFixed(4));
       this.handleScore(msg.score);
     });
     this.worker.on("error", (e) => console.error("[nova] wake worker error", e));
@@ -77,7 +77,7 @@ export class WakeWordController {
   pushFrame(buf: ArrayBuffer): void {
     if (!this.enabled || this.pausedForTurn) return;
     this.frameCount++;
-    if (this.frameCount % 50 === 0) console.log("[nova] wake frames received:", this.frameCount);
+    if (this.frameCount % 5000 === 0) console.log("[nova] wake frames received:", this.frameCount);
     this.worker?.postMessage({ type: "frame", buf }, [buf]);
   }
 

@@ -33,7 +33,7 @@ const HEAVY_MODEL =
   process.env.ANTHROPIC_MODEL_HEAVY?.trim() || "claude-sonnet-4-6";
 const MAX_TOOL_ITERATIONS_VOICE = 3;
 const MAX_TOOL_ITERATIONS_TEXT = 10;
-const RETRIEVAL_DEADLINE_MS = 1200;
+const RETRIEVAL_DEADLINE_MS = 800;
 const RETRIEVAL_DEADLINE_VOICE_MS = 800;
 
 // Friendly labels shown in the orb while a tool runs.
@@ -192,6 +192,11 @@ export async function streamTurn(
   const transcript = req.messages.at(-1)?.content ?? "";
   const controller = new AbortController();
   inFlight.set(req.requestId, controller);
+  // Per-turn timing, logged on completion as one line — the only way to see
+  // where a slow reply's seconds actually went (prep vs. model vs. tools).
+  const t0 = Date.now();
+  const timing: string[] = [];
+  const mark = (label: string, since: number) => timing.push(`${label}=${Date.now() - since}ms`);
 
   try {
     const triggerRun = await runSkillByTrigger(transcript);
@@ -232,6 +237,8 @@ export async function streamTurn(
     // before retrieval even started, adding hundreds of ms to every reply.
     // The persisted row may or may not land in the history query depending on
     // timing, so dedupe it by id and append the transcript ourselves.
+    mark("setup", t0);
+    const tPrep = Date.now();
     const [userMsg, history, relevantContext, timezone] = await Promise.all([
       persistUserMessage(conversationId, transcript),
       loadLastNMessages(conversationId, plan.chatHistoryLimit),
@@ -244,6 +251,7 @@ export async function streamTurn(
       resolveUserTimezoneCached(userId),
     ]);
 
+    mark("prep", tPrep);
     const clock = buildClockForZone(timezone);
     // Prompt caching: the big static system prompt is one cached block; the
     // per-turn clock is a separate UNcached block after it, so the cache
@@ -286,6 +294,8 @@ export async function streamTurn(
     >[0]["tools"];
 
     while (true) {
+      const tCall = Date.now();
+      let firstTokenAt = 0;
       const stream = client().messages.stream(
         {
           model,
@@ -298,11 +308,25 @@ export async function streamTurn(
       );
 
       stream.on("text", (delta: string) => {
+        if (!firstTokenAt) firstTokenAt = Date.now();
         fullText += delta;
         emit(IpcChannel.ChatDelta, { requestId: req.requestId, delta });
       });
 
       const response = await stream.finalMessage();
+      const toolNames = response.content
+        .filter((b) => b.type === "tool_use" || b.type === "server_tool_use")
+        .map((b) => (b as { name: string }).name);
+      // Logging only — must never be able to fail a turn.
+      const u = response.usage as Partial<typeof response.usage> | undefined;
+      timing.push(
+        `call${iterations + pauseContinuations + 1}[` +
+          (firstTokenAt ? `first_text=${firstTokenAt - tCall}ms ` : "") +
+          `total=${Date.now() - tCall}ms stop=${response.stop_reason}` +
+          (toolNames.length ? ` tools=${toolNames.join(",")}` : "") +
+          ` in=${u?.input_tokens ?? "?"} cache_read=${u?.cache_read_input_tokens ?? 0}` +
+          ` cache_write=${u?.cache_creation_input_tokens ?? 0} out=${u?.output_tokens ?? "?"}]`,
+      );
 
       // Server-side web search hit its internal loop limit — re-send so
       // Anthropic resumes the search where it left off (bounded so a runaway
@@ -336,6 +360,7 @@ export async function streamTurn(
         });
       }
 
+      const tTools = Date.now();
       const toolResults = await Promise.all(
         toolUseBlocks.map(async (block) => {
           const result = await executeTool(
@@ -372,6 +397,7 @@ export async function streamTurn(
         }),
       );
       messages.push({ role: "user", content: toolResults });
+      mark("tools", tTools);
       iterations++;
     }
 
@@ -381,6 +407,9 @@ export async function streamTurn(
     });
 
     emit(IpcChannel.ChatDone, { requestId: req.requestId, text: resolvedText });
+    console.log(
+      `[turn] ${isVoice ? "voice" : "text"} ${model} total=${Date.now() - t0}ms ${timing.join(" ")} chars=${resolvedText.length}`,
+    );
 
     void persistAssistantMessage(conversationId, resolvedText).catch((e) =>
       console.error("[turn] persist assistant:", e),
