@@ -39,6 +39,9 @@ export interface MemorySearchResult {
   confidence?: number;
   valid_from: string | null;
   created_at: string;
+  // Only populated when the result came from findSemanticallySimilarMemories —
+  // used by reconcile.ts to catch paraphrased duplicates text search misses.
+  similarity?: number;
 }
 
 export interface Reminder {

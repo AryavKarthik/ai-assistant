@@ -1,4 +1,5 @@
 import type { MemoryType } from "./types";
+import { extractJsonPayload } from "./json-extract";
 
 export interface ClassificationResult {
   memory_type: MemoryType;
@@ -178,7 +179,10 @@ JSON: {"type":"<type>","confidence":<0.5-1.0>}`,
       content: Array<{ type: string; text: string }>;
     };
     const text = json.content[0]?.text?.trim() ?? "";
-    const parsed = JSON.parse(text) as { type?: string; confidence?: number };
+    const parsed = JSON.parse(extractJsonPayload(text)) as {
+      type?: string;
+      confidence?: number;
+    };
 
     const VALID_TYPES = new Set<MemoryType>([
       "fact","preference","routine","episodic","goal","relationship","skill",

@@ -2,6 +2,15 @@ import { getSupabase } from "../supabase";
 import type { LinkType, MemoryLink, MemoryType } from "./types";
 import { searchMemories } from "./search";
 
+async function archiveMemory(memoryId: string, userId: string): Promise<void> {
+  const { error } = await getSupabase()
+    .from("memories")
+    .update({ is_archived: true })
+    .eq("id", memoryId)
+    .eq("user_id", userId);
+  if (error) throw error;
+}
+
 export interface LinkedMemory {
   id: string;
   content: string;
@@ -175,7 +184,15 @@ export async function detectAndLinkRelationships(
       for (const candidate of candidates) {
         if (candidate.id === newMemoryId) continue;
         await linkMemories(userId, newMemoryId, candidate.id, "contradicts");
-        break; // only link the top contradiction candidate
+        // Most true corrections are already caught by saveMemory's merge path
+        // (which supersedes the old row directly). This handles the residual
+        // case — a distinct-subject correction whose merge heuristics didn't
+        // fire — by archiving the superseded memory instead of just linking
+        // it and leaving both live and retrievable forever.
+        await archiveMemory(candidate.id, userId).catch((err: unknown) =>
+          console.error("[memory] failed to archive superseded memory:", err),
+        );
+        break; // only resolve the top contradiction candidate
       }
     }
   } catch (err) {

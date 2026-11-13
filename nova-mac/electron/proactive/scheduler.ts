@@ -10,6 +10,7 @@ import { isQuietNow } from "./quiet-hours";
 import { getAlertPrefs } from "./alert-prefs";
 import { wasAnnounced, markAnnounced } from "./announce-store";
 import { dueLoops, markLoopRan } from "./loops-store";
+import { shouldRunHygiene, markHygieneRan } from "./hygiene-store";
 
 const TICK_MS = 30_000;
 /** Don't announce an alert whose fire moment is further in the past than this
@@ -150,6 +151,22 @@ export class ProactiveScheduler {
       // Agent loops run regardless of proactiveMode — the user explicitly
       // created each one — but their spoken results still respect DND.
       await this.runDueLoops(quiet, alerts);
+
+      // Memory hygiene (dedupe + embedding backfill) — at most once a day,
+      // silent, never blocks the user-facing announcements above.
+      if (shouldRunHygiene()) {
+        markHygieneRan();
+        const { runMemoryHygiene } = await import("../memory/hygiene");
+        runMemoryHygiene(userId)
+          .then(({ deduped, embeddingsBackfilled }) => {
+            if (deduped > 0 || embeddingsBackfilled > 0) {
+              console.log(
+                `[memory-hygiene] deduped ${deduped}, backfilled ${embeddingsBackfilled} embeddings`,
+              );
+            }
+          })
+          .catch((err: unknown) => console.error("[memory-hygiene] run failed:", err));
+      }
     } catch (err) {
       console.error("[proactive] tick failed:", err instanceof Error ? err.message : err);
     } finally {

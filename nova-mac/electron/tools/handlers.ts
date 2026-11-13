@@ -87,6 +87,8 @@ export async function executeTool(
           return handleSaveMemory(input, context);
         case "search_memory":
           return handleSearchMemory(input, context);
+        case "update_memory":
+          return handleUpdateMemory(input, context);
         case "log_workout":
           return handleLogWorkout(input, context);
         case "list_workouts":
@@ -260,6 +262,36 @@ async function handleSaveMemory(
       : {}),
     ...(result.removedDuplicateIds?.length
       ? { removed_duplicates: result.removedDuplicateIds.length }
+      : {}),
+  };
+}
+
+async function handleUpdateMemory(
+  input: unknown,
+  context: ToolContext,
+): Promise<Record<string, unknown>> {
+  const { memory_id, new_content } = input as {
+    memory_id?: string;
+    new_content?: string;
+  };
+
+  if (!memory_id?.trim()) return { error: "memory_id is required" };
+  if (!new_content?.trim()) return { error: "new_content is required" };
+
+  const result = await saveMemory(
+    context.userId,
+    new_content.trim(),
+    undefined,
+    context.sourceMessageId,
+    memory_id.trim(),
+  );
+
+  return {
+    success: true,
+    id: result.memory.id,
+    action: result.action,
+    ...(result.replacedContent
+      ? { replaced_content: result.replacedContent }
       : {}),
   };
 }

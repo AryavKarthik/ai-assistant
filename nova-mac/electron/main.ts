@@ -1,13 +1,19 @@
 import { config as loadEnv } from "dotenv";
+import { app, BrowserWindow, globalShortcut, ipcMain, Notification, dialog } from "electron";
+import { join, resolve } from "node:path";
 // Load env into the main process BEFORE anything reads process.env (e.g. Supabase,
 // Anthropic, OpenAI). electron-vite does not populate process.env for the main
 // process the way Next.js auto-loads .env.local — we must do it explicitly.
 // .env.local takes precedence; .env is a fallback (dotenv never overrides set vars).
-loadEnv({ path: [".env.local", ".env"] });
+// A packaged app has no project checkout to read a relative .env.local from —
+// process.cwd() for a GUI-launched app is unpredictable (typically "/"), not the
+// app bundle — so packaged builds read from the per-user Application Support
+// directory instead. That also survives reinstalls, unlike anything baked into
+// the (read-only, re-created-on-every-build) app bundle.
+const envDir = app.isPackaged ? app.getPath("userData") : process.cwd();
+loadEnv({ path: [join(envDir, ".env.local"), join(envDir, ".env")] });
 
-import { app, BrowserWindow, globalShortcut, ipcMain, Notification, dialog } from "electron";
 import { currentPlatform } from "./platform/index";
-import { join, resolve } from "node:path";
 import {
   createOrbWindow,
   createAppWindow,

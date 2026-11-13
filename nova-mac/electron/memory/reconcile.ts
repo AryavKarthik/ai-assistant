@@ -86,9 +86,15 @@ export interface ReplacementCandidate {
   content: string;
   category: string | null;
   created_at: string;
-  reason: "duplicate" | "subject_key" | "overlap" | "subset";
+  reason: "duplicate" | "subject_key" | "overlap" | "subset" | "semantic";
   score: number;
 }
+
+// Embedding cosine similarity at/above this bar is treated as "almost
+// certainly the same fact, worded differently" — the semantic signal that was
+// completely absent before (dedup relied purely on regex subject keys + term
+// overlap, which paraphrases sail past).
+const SEMANTIC_SIMILARITY_THRESHOLD = 0.83;
 
 function normalizeToken(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
@@ -139,6 +145,13 @@ function scorePair(
   const existingSubject = extractSubjectKey(candidate.content);
   if (newSubject && existingSubject && newSubject === existingSubject) {
     return { score: 0.9, reason: "subject_key" };
+  }
+
+  if (
+    typeof candidate.similarity === "number" &&
+    candidate.similarity >= SEMANTIC_SIMILARITY_THRESHOLD
+  ) {
+    return { score: candidate.similarity, reason: "semantic" };
   }
 
   const overlap = termOverlapScore(newContent, candidate.content);

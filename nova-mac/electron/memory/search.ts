@@ -29,6 +29,9 @@ export interface MemorySearchResult {
   confidence?: number;
   valid_from: string | null;
   created_at: string;
+  // Only populated when the result came from findSemanticallySimilarMemories —
+  // used by reconcile.ts to catch paraphrased duplicates text search misses.
+  similarity?: number;
 }
 
 export interface SearchMemoriesOptions {
@@ -379,10 +382,46 @@ export async function searchMemories(
   return hybridSearch(userId, trimmed, limit);
 }
 
+// Semantic similarity search via the find_semantically_similar_memories RPC
+// (migration 018, shared Supabase project) — the missing signal for
+// paraphrased duplicates that share no keywords/subject-key pattern at all
+// with the incoming content.
+async function findSemanticallySimilarMemories(
+  userId: string,
+  embedding: number[],
+  limit = 8,
+  minSimilarity = 0.83,
+): Promise<MemorySearchResult[]> {
+  if (embedding.length === 0) return [];
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc(
+    "find_semantically_similar_memories",
+    {
+      p_user_id: userId,
+      p_embedding: embedding,
+      p_limit: limit,
+      p_min_similarity: minSimilarity,
+    },
+  );
+
+  if (error) {
+    console.warn(
+      "[memory] semantic similarity RPC unavailable, skipping:",
+      error.message,
+    );
+    return [];
+  }
+
+  return (data ?? []) as MemorySearchResult[];
+}
+
 // Broader search used before saving — catches duplicates the basic search misses.
+// `embedding` (already computed by the caller for classification/storage) lets
+// this also run a semantic pass without a second OpenAI round trip.
 export async function findReconciliationCandidates(
   userId: string,
   content: string,
+  embedding?: number[],
 ): Promise<MemorySearchResult[]> {
   const batches = await Promise.all([
     searchMemories(userId, content, 25),
@@ -396,7 +435,26 @@ export async function findReconciliationCandidates(
     );
   }
 
-  return dedupeResults(batches.flat());
+  const textResults = dedupeResults(batches.flat());
+
+  if (embedding && embedding.length > 0) {
+    const semanticHits = await findSemanticallySimilarMemories(
+      userId,
+      embedding,
+    );
+    const byId = new Map(textResults.map((r) => [r.id, r] as const));
+    for (const hit of semanticHits) {
+      const existing = byId.get(hit.id);
+      if (existing) {
+        existing.similarity = hit.similarity;
+      } else {
+        textResults.push(hit);
+        byId.set(hit.id, hit);
+      }
+    }
+  }
+
+  return textResults;
 }
 
 function buildContextHeader(plan: RetrievalPlan): string {

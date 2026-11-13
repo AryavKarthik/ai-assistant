@@ -30,7 +30,7 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "search_memory",
     description:
-      "Search stored memories when pre-fetched context is insufficient. Use for specific recall questions.",
+      "Search stored memories when pre-fetched context is insufficient, and ALWAYS before saving anything that might already be stored under different wording (e.g. before recording a correction or an update to something the user has mentioned before). Use for specific recall questions too.",
     input_schema: {
       type: "object",
       properties: {
@@ -38,6 +38,25 @@ export const TOOL_DEFINITIONS: Tool[] = [
         limit: { type: "integer" },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "update_memory",
+    description:
+      "Update an existing memory by ID with corrected or expanded content. Use this instead of save_memory once you've located the target memory via search_memory or context — it's the reliable way to correct/refine a fact whose ID you now know, rather than hoping save_memory's automatic matching finds it. You don't need to repeat unrelated details from the old memory; they're preserved automatically unless they conflict with the new content.",
+    input_schema: {
+      type: "object",
+      properties: {
+        memory_id: {
+          type: "string",
+          description: "UUID of the memory to update (from context or a search_memory result)",
+        },
+        new_content: {
+          type: "string",
+          description: "The corrected or expanded fact, in clear natural language",
+        },
+      },
+      required: ["memory_id", "new_content"],
     },
   },
   {

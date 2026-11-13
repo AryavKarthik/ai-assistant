@@ -121,7 +121,12 @@ function client(): Anthropic {
 }
 
 // Phrases that imply the user is asking about what's on their screen — routed
-// to the vision-capable heavy model so it reads the screenshot well.
+// to the vision-capable heavy model so it reads the screenshot well. This was
+// briefly pinned to the LIGHT model instead for speed/cost, but real usage
+// showed Haiku repeatedly misreading fine detail (a small table of dates got
+// transposed/misread five-plus times in a row while adding calendar events
+// from a screenshot, each wrong reading producing wrong calendar events) —
+// reading a screen accurately is worth the extra latency/cost of Sonnet.
 const SCREEN_HINT =
   /\b(screen|display|read (this|it|that|the)|what does (this|it|that) say|what('?s| is) (this|that|on (my|the) screen)|summari[sz]e (this|the page|what)|look at (this|my screen|the screen|that)|see (my|the) screen|what am i (looking at|seeing)|what app is (this|that)|is (this|that) safe|explain (this|what('?s| is) here))\b/i;
 
@@ -210,10 +215,12 @@ export async function streamTurn(
     // Voice used to be pinned to the light model; letting genuinely complex
     // spoken asks route to the heavy model makes voice answers as smart as
     // typed ones — the streaming STT path buys back the extra first-token time.
-    // Screen/vision questions are pinned to the LIGHT model (Haiku) by user
-    // preference — Haiku 4.5 has vision, and it's faster + far cheaper for
-    // reading what's on screen.
-    const complexity = SCREEN_HINT.test(transcript) ? "light" : inferComplexity(transcript);
+    // Screen/vision questions route to the HEAVY model (Sonnet) — this was
+    // pinned to Haiku for speed/cost, but real usage showed Haiku repeatedly
+    // misreading fine detail (a table of dates got transposed/misread
+    // five-plus times fixing a screen-read calendar task), so accuracy wins
+    // here over the extra latency/cost.
+    const complexity = SCREEN_HINT.test(transcript) ? "heavy" : inferComplexity(transcript);
     const model = complexity === "heavy" ? HEAVY_MODEL : LIGHT_MODEL;
     const maxIterations = isVoice
       ? MAX_TOOL_ITERATIONS_VOICE
