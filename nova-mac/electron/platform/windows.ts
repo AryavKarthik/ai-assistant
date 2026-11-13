@@ -42,7 +42,7 @@ const WINDOWS_CONTROL_BLOCK = `Acting on the user's computer (confirmation polic
 Computer control (you run natively on the user's Windows PC):
 ${SHARED_CONTROL_LINES}
 - MUSIC/VIDEO: default to YouTube. Any "play <song/artist/genre/video>", "put on music", "play something" → call play_youtube with the query; it opens the top result playing in the browser. USE it — never say you can't play music, and never just open a search page and stop.
-- run_shell_command: run a Windows shell (cmd) command. Powerful and unsandboxed — prefer a dedicated tool when one exists, and never run something you don't understand.
+- run_shell_command: run a Windows shell (cmd) command. Powerful and unsandboxed; the user must approve each run in a dialog — prefer a dedicated tool when one exists, and never run something you don't understand.
 - System automation beyond these tools (controlling apps, volume/brightness, screenshots, driving the browser, seeing the screen) is NOT available on Windows yet. If asked, say so plainly and offer the closest thing you CAN do — don't attempt it via run_shell_command unless the user explicitly asks for a shell-based workaround.
 - After any action, confirm briefly in one sentence what you did (and surface any error clearly).`;
 

@@ -52,7 +52,7 @@
   "allowScripts": {
     "electron@33.4.11": true,
     "esbuild@0.21.5": true,
-    "onnxruntime-node@1.27.0": true,
-    "protobufjs@7.6.4": true
+    "onnxruntime-node@1.31.1": true,
+    "protobufjs@7.6.6": true
   }
 }

@@ -5,3 +5,10 @@ dist/
 build/*.node
 electron/native-probe/build/
 electron/wakeword/models/*.onnx
+
+# Secrets — never commit (.env.local holds API keys, OAuth secrets, DB URLs)
+.env.*
+!.env.example
+*.pem
+*service-account*.json
+session.bin

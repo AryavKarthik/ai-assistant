@@ -184,6 +184,11 @@ don't load at startup.
 
 - Magic-link OTP (`auth.signInWithOtp`) with `emailRedirectTo: nova://auth-callback`.
   `handleAuthCallback` tolerates both hash-token and `?code=` (PKCE) callback shapes.
+- Email + password sign-in is the normal path. "First time / forgot password" (`setPasswordAndSignIn`)
+  sends a magic link and holds the chosen password in memory; `handleAuthCallback` applies it with
+  the user's *own* session (`auth.updateUser`) only if the signed-in email matches. **Never use the
+  Supabase service-role key in this app** — it used to reset any account's password with no proof
+  of ownership (account takeover for anyone at the keyboard). No code reads `SUPABASE_SERVICE_ROLE_KEY`.
 - Sessions are persisted **encrypted** via Electron `safeStorage` (Keychain) to
   `userData/session.bin` — see `electron/session-store.ts`. Supabase client itself runs with
   `persistSession: false`; we restore manually on boot via `restoreSession()`.
@@ -361,6 +366,10 @@ on-fire callback that shows a Notification, summons the orb, and broadcasts
 `open_app` / `quit_app` / `open_url`, `set_system_volume` / `get_system_volume`,
 `set_screen_brightness`, `run_applescript` / `run_shortcut` / `list_shortcuts` (in-app and
 browser navigation — "open Clock and set a 30-minute timer" composes AppleScript).
+`run_shell_command`, `run_applescript` and `run_browser_js` each require the user to click "Run"
+in a native dialog (`electron/tools/confirm.ts`, 60s timeout = declined) — Claude also reads
+untrusted emails/pages and agent loops run unattended, so prompt injection could otherwise
+execute code silently. Keep any new arbitrary-code tool behind `confirmCodeExecution`.
 `electron/tools/composio.ts` adds `composio_search_tools` / `composio_execute` (Composio REST
 v3 bridge for Google Docs/Notion/etc.); these two are stripped from the tool list by
 `getToolDefinitions()` in `definitions.ts` unless `COMPOSIO_API_KEY` is set — chat-turn.ts

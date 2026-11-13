@@ -1,5 +1,5 @@
 import { BrowserWindow } from "electron";
-import { getSupabase, getServiceSupabase } from "./supabase";
+import { getSupabase } from "./supabase";
 import { saveSession, loadSession, clearSession } from "./session-store";
 import { IpcChannel, type AuthState } from "@shared/types";
 import { resetConversationCache } from "./conversation";
@@ -34,47 +34,42 @@ export async function signInWithPassword(
   return { ok: false, error: "No session returned." };
 }
 
+// Password chosen on the "first time / forgot password" form, held in memory
+// only until the magic link proves the user owns the email. It is applied with
+// the user's OWN session (auth.updateUser) — never with a service-role key,
+// which would let anyone at the keyboard reset any account's password.
+let pendingPassword: { email: string; password: string; expiresAt: number } | null = null;
+const PENDING_PASSWORD_TTL_MS = 30 * 60 * 1000;
+
 /**
- * Sets (or resets) the password for an account and signs in — for first-time
- * setup or a forgotten password. Uses the service role to update the user, so
- * no email round-trip is needed. If the account doesn't exist yet, it's
- * created with the email pre-confirmed.
+ * First-time setup / forgotten password. Sends a magic link to the email; the
+ * chosen password is set once that link is opened (handleAuthCallback), so
+ * only the inbox owner can set or change it.
  */
 export async function setPasswordAndSignIn(
   email: string,
   password: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; pending?: boolean; error?: string }> {
   const e = email.trim();
   if (!e) return { ok: false, error: "Enter your email." };
   if (password.length < 6) return { ok: false, error: "Password must be at least 6 characters." };
-
-  let admin;
   try {
-    admin = getServiceSupabase();
+    await startSignIn(e);
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Service role not configured." };
+    return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the sign-in link." };
   }
+  pendingPassword = { email: e.toLowerCase(), password, expiresAt: Date.now() + PENDING_PASSWORD_TTL_MS };
+  return { ok: true, pending: true };
+}
 
-  try {
-    const { data, error } = await admin.auth.admin.listUsers();
-    if (error) return { ok: false, error: error.message };
-    const existing = data.users.find((u) => u.email?.toLowerCase() === e.toLowerCase());
-    if (existing) {
-      const { error: updErr } = await admin.auth.admin.updateUserById(existing.id, { password });
-      if (updErr) return { ok: false, error: updErr.message };
-    } else {
-      const { error: createErr } = await admin.auth.admin.createUser({
-        email: e,
-        password,
-        email_confirm: true,
-      });
-      if (createErr) return { ok: false, error: createErr.message };
-    }
-  } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : "Couldn't set password." };
-  }
-
-  return signInWithPassword(e, password);
+/** Applies a pending password to the account that just signed in, if it matches. */
+async function applyPendingPassword(sessionEmail: string | undefined): Promise<void> {
+  const pending = pendingPassword;
+  pendingPassword = null;
+  if (!pending || Date.now() > pending.expiresAt) return;
+  if (!sessionEmail || sessionEmail.toLowerCase() !== pending.email) return;
+  const { error } = await getSupabase().auth.updateUser({ password: pending.password });
+  if (error) console.error("[nova] setting password after magic link failed:", error.message);
 }
 
 export async function handleAuthCallback(url: string): Promise<void> {
@@ -90,9 +85,10 @@ export async function handleAuthCallback(url: string): Promise<void> {
   const code = queryParams.get("code");
 
   if (access_token && refresh_token) {
-    const { error } = await getSupabase().auth.setSession({ access_token, refresh_token });
+    const { data, error } = await getSupabase().auth.setSession({ access_token, refresh_token });
     if (error) { console.error("[nova] setSession error:", error); throw error; }
     saveSession({ access_token, refresh_token });
+    await applyPendingPassword(data.user?.email);
     emit(IpcChannel.AuthChanged, await getAuthState());
     return;
   }
@@ -102,6 +98,7 @@ export async function handleAuthCallback(url: string): Promise<void> {
     if (error) { console.error("[nova] exchangeCode error:", error); throw error; }
     if (data.session) {
       saveSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token });
+      await applyPendingPassword(data.user?.email);
       emit(IpcChannel.AuthChanged, await getAuthState());
     }
     return;

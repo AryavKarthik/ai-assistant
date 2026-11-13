@@ -86,15 +86,16 @@ export function App() {
     const signIn = () => {
       if (busy) return;
       setBusy(true);
-      setStatus(firstTime ? "Setting your password…" : "Signing in…");
-      const call = firstTime
+      setStatus(firstTime ? "Sending a sign-in link…" : "Signing in…");
+      const call: Promise<{ ok: boolean; pending?: boolean; error?: string }> = firstTime
         ? nova().authSetPassword(email, password)
         : nova().authSignInPassword(email, password);
       call
         .then((r) => {
           setBusy(false);
-          // On success, onAuthChanged flips the view — no message needed.
+          // On sign-in success, onAuthChanged flips the view — no message needed.
           if (!r.ok) setStatus(r.error ?? "Sign-in failed.");
+          else if (r.pending) setStatus("Check your email and open the sign-in link — your password is set when you do.");
         })
         .catch((e) => {
           setBusy(false);
@@ -125,7 +126,7 @@ export function App() {
             disabled={busy || !email.trim() || !password}
             style={{ padding: "10px 12px", borderRadius: 10, border: "none", cursor: busy ? "default" : "pointer", background: "rgba(10,132,255,0.95)", color: "white", fontSize: 14, fontWeight: 600, opacity: busy || !email.trim() || !password ? 0.6 : 1 }}
           >
-            {firstTime ? "Set password & sign in" : "Sign in"}
+            {firstTime ? "Email me a link to set it" : "Sign in"}
           </button>
           {status && <div style={{ fontSize: 12, opacity: 0.8 }}>{status}</div>}
           <button

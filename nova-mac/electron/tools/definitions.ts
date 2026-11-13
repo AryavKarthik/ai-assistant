@@ -655,7 +655,7 @@ export const TOOL_DEFINITIONS: Tool[] = [
   {
     name: "run_shell_command",
     description:
-      "Run an arbitrary shell command (zsh on macOS, cmd on Windows) and return stdout/stderr plus the exit code. Use for file operations, git, launching CLIs, reading system info, or anything the curated tools don't cover. Explain what you're about to do before running anything destructive (rm/del, overwriting files, etc.).",
+      "Run an arbitrary shell command (zsh on macOS, cmd on Windows) and return stdout/stderr plus the exit code. Use for file operations, git, launching CLIs, reading system info, or anything the curated tools don't cover. The user must approve each command in a confirmation dialog; if it comes back declined, tell them and do not retry. Explain what you're about to do before running anything destructive (rm/del, overwriting files, etc.).",
     input_schema: {
       type: "object",
       properties: {

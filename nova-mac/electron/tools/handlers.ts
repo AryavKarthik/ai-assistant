@@ -11,6 +11,7 @@ import { saveMemory } from "../memory/save";
 import { searchMemories } from "../memory/search";
 import { resolveReminderDueAt } from "./parse-due-at";
 import { fetchWebpage } from "./webpage";
+import { confirmCodeExecution, CONFIRMATION_DECLINED } from "./confirm";
 import type { MemoryCategory } from "../memory/types";
 import {
   listCalendarEvents,
@@ -858,6 +859,7 @@ async function handleRunAppleScript(input: unknown): Promise<Record<string, unkn
   const { script, purpose } = input as { script?: string; purpose?: string };
   if (!script?.trim()) return { error: "script is required" };
   if (purpose) console.log("[tools] run_applescript:", purpose);
+  if (!(await confirmCodeExecution("an AppleScript", script, purpose))) return { error: CONFIRMATION_DECLINED };
   const { output } = await runAppleScript(script);
   return { success: true, output };
 }
@@ -933,6 +935,7 @@ async function handleRunBrowserJs(input: unknown): Promise<Record<string, unknow
   if (browser !== undefined && browser !== "chrome" && browser !== "safari") {
     return { error: "browser must be chrome or safari" };
   }
+  if (!(await confirmCodeExecution("JavaScript in your browser", code))) return { error: CONFIRMATION_DECLINED };
   const result = await executeBrowserJs(code, { browser });
   return { success: true, ...result };
 }
@@ -967,6 +970,7 @@ async function handleOrganizeBrowserTabs(input: unknown): Promise<Record<string,
 async function handleRunShellCommand(input: unknown): Promise<Record<string, unknown>> {
   const { command } = input as { command?: string };
   if (!command?.trim()) return { error: "command is required" };
+  if (!(await confirmCodeExecution("a shell command", command))) return { error: CONFIRMATION_DECLINED };
   const result = await runShellCommand(command);
   return { success: result.exitCode === 0, ...result };
 }

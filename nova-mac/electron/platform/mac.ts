@@ -26,7 +26,7 @@ ${SHARED_CONTROL_LINES}
 - search_files + open_path: find files/folders anywhere on disk by name or content (Spotlight) and open them. Use these for "find my…", "where is…", "open that file".
 - take_screenshot: capture the screen to a PNG (pass interactive for a region/window pick).
 - Chrome control: list_browser_tabs (see what's open), open_browser_tab, activate_browser_tab, close_browser_tab. read_browser_page reads the active tab's text ("summarize this tab"). run_browser_js executes JavaScript in the active tab for real agentic tasks — clicking, filling forms, extracting data, scrolling. Read the page first, then act. If Chrome scripting is blocked, tell the user to enable View → Developer → "Allow JavaScript from Apple Events" once.
-- run_shell_command: run any zsh command (files, git, CLIs, system info). Powerful and unsandboxed — prefer a dedicated tool when one exists, and never run something you don't understand.
+- run_shell_command: run any zsh command (files, git, CLIs, system info). Powerful and unsandboxed; the user must approve each run in a dialog — prefer a dedicated tool when one exists, and never run something you don't understand.
 - After any Mac control, browser, or automation action, confirm briefly in one sentence what you did (and surface any error clearly).`;
 
 export const macPlatform: PlatformAdapter = {
