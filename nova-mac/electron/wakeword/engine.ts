@@ -21,6 +21,18 @@ import {
 const MEL_CONTEXT_SAMPLES = 480; // 3 hops of STFT warmup
 const EMBEDDING_HOP = 8; // mel frames between embeddings (openWakeWord window=76, step=8)
 
+// ONNX Runtime's defaults are wrong for an always-on listener: one intra-op
+// thread per physical core, and those threads SPIN (busy-wait) between runs.
+// With a tiny model run every 80 ms that kept ~6-8 cores pegged forever (~50%
+// CPU on a 16-thread PC). One non-spinning thread measured 2% of a core and
+// was faster per frame (11 ms vs 60 ms worst case).
+const SESSION_OPTIONS: ort.InferenceSession.SessionOptions = {
+  intraOpNumThreads: 1,
+  interOpNumThreads: 1,
+  executionMode: "sequential",
+  extra: { session: { intra_op: { allow_spinning: "0" }, inter_op: { allow_spinning: "0" } } },
+};
+
 export class WakeWordEngine {
   private mel!: ort.InferenceSession;
   private embed!: ort.InferenceSession;
@@ -37,9 +49,9 @@ export class WakeWordEngine {
   constructor(private readonly modelsDir: string) {}
 
   async init(): Promise<void> {
-    this.mel = await ort.InferenceSession.create(join(this.modelsDir, "melspectrogram.onnx"));
-    this.embed = await ort.InferenceSession.create(join(this.modelsDir, "embedding_model.onnx"));
-    this.wake = await ort.InferenceSession.create(join(this.modelsDir, "hey_jarvis_v0.1.onnx"));
+    this.mel = await ort.InferenceSession.create(join(this.modelsDir, "melspectrogram.onnx"), SESSION_OPTIONS);
+    this.embed = await ort.InferenceSession.create(join(this.modelsDir, "embedding_model.onnx"), SESSION_OPTIONS);
+    this.wake = await ort.InferenceSession.create(join(this.modelsDir, "hey_jarvis_v0.1.onnx"), SESSION_OPTIONS);
   }
 
   /** Clear all rolling scoring state (audio ring, STFT context, mel/embedding
